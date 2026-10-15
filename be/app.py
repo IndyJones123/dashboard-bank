@@ -1,0 +1,257 @@
+"""BE Bank Dashboard — FastAPI + MySQL (parameterised query) + mode mock.
+
+Jalankan:  uvicorn app:app --reload --port 8000  (dari folder be/)
+Akun mock: admin/admin123 (admin) | user/user123 (member)
+"""
+from __future__ import annotations
+
+import os
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
+
+try:
+    import pyodbc  # tersedia di .venv project; tanpa driver (verifier ad-hoc) -> None
+except ImportError:  # pragma: no cover
+    pyodbc = None
+
+import auth
+import db
+import queries as Q
+
+app = FastAPI(title="Bank Dashboard API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:5173")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+bearer = HTTPBearer(auto_error=False)
+
+
+# ------------------------------------------- error DB -> respons yang jelas
+def _db_error_state(exc: Exception) -> str:
+    args = getattr(exc, "args", None)
+    return args[0] if args and isinstance(args[0], str) else ""
+
+
+def _db_detail(exc: Exception) -> str:
+    """Bedaakan SQL/schema (SQLSTATE 42xxx) vs koneksi/autentikasi."""
+    cfg = db.MYSQL_CONFIG
+    tgt = f"{cfg['host']}:{cfg['port']}/{cfg['database']}"
+    if _db_error_state(exc).startswith("42"):
+        return (
+            f"SQL gagal dieksekusi di {tgt} — {exc}. "
+            "Cek nama tabel/kolom & bahasa query (be/queries.py)."
+        )
+    return (
+        f"Database tidak terjangkau ({tgt}) — {type(exc).__name__}: {exc}. "
+        "Cek VPN/host/port di be/.env, atau set MOCK_MODE=1 untuk mode mock."
+    )
+
+
+if pyodbc is not None:
+
+    @app.exception_handler(pyodbc.Error)
+    async def _db_error(request, exc):  # noqa: ANN001
+        code = 500 if _db_error_state(exc).startswith("42") else 503
+        return JSONResponse(status_code=code, content={"detail": _db_detail(exc)})
+
+
+@app.exception_handler(OSError)
+async def _io_error(request, exc):  # noqa: ANN001
+    # socket timeout/error jaringan DB (bocor apa adanya dari driver)
+    cfg = db.MYSQL_CONFIG
+    tgt = f"{cfg['host']}:{cfg['port']}"
+    return JSONResponse(
+        status_code=503,
+        content={"detail": f"Koneksi jaringan ke DB ({tgt}) gagal — {type(exc).__name__}: {exc}"},
+    )
+
+
+# ---------------------------------------------------------------- models
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class LoginOut(BaseModel):
+    token: str
+    user: dict
+
+
+# ---------------------------------------------------------------- helpers
+def current_user(creds: HTTPAuthorizationCredentials | None = Depends(bearer)) -> dict:
+    if creds is None or not creds.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token wajib")
+    payload = auth.decode_token(creds.credentials)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token tidak valid/kadaluarsa")
+    return payload
+
+
+# ---------------------------------------------------------------- routes
+@app.get("/api/health")
+def health():
+    return {"ok": True, "mock_mode": db.MOCK_MODE}
+
+
+@app.post("/api/login", response_model=LoginOut)
+def login(body: LoginIn):
+    try:
+        rows = db.run_query(Q.Q_USER_BY_USERNAME, (body.username,))
+    except Exception as exc:
+        if "42S02" not in str(exc):
+            raise  # selain "objek tak ada" -> handler 503/500 dengan pesan asli
+        # Tabel users tidak ada di DB asli -> autentikasi memakai akun mock
+        rows = Q.mock_rows(Q.Q_USER_BY_USERNAME, (body.username,))
+    if not rows:
+        raise HTTPException(status_code=401, detail="Username atau password salah")
+    user = rows[0]
+    if not auth.verify_password(body.password, user.get("password_hash") or user.get("password") or ""):
+        raise HTTPException(status_code=401, detail="Username atau password salah")
+    token = auth.create_token(user)
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "full_name": user.get("full_name", ""),
+            "role": user.get("role", "member"),
+        },
+    }
+
+
+# --- publik: boleh dilihat tanpa login
+@app.get("/api/dashboard/stats")
+def dashboard_stats():
+    return db.run_query(Q.Q_DASHBOARD_STATS)[0]
+
+
+@app.get("/api/dashboard/monthly-flow")
+def monthly_flow():
+    return db.run_query(Q.Q_MONTHLY_FLOW)
+
+
+@app.get("/api/dashboard/recent-transactions")
+def recent_transactions(limit: int = Query(5, ge=1, le=50)):
+    return db.run_query(Q.Q_RECENT_TRANSACTIONS, (limit,))
+
+
+# --- khusus login: butuh Authorization: Bearer <token>
+@app.get("/api/accounts")
+def accounts(limit: int = Query(10, ge=1, le=100), _me: dict = Depends(current_user)):
+    return db.run_query(Q.Q_ACCOUNTS, (limit,))
+
+
+@app.get("/api/dashboard/top-deposits")
+def top_deposits(limit: int = Query(5, ge=1, le=50), _me: dict = Depends(current_user)):
+    return db.run_query(Q.Q_TOP_DEPOSITS, (limit,))
+
+
+@app.get("/api/dashboard/monthly-profit")
+def monthly_profit(_me: dict = Depends(current_user)):
+    return db.run_query(Q.Q_MONTHLY_PROFIT)
+
+
+@app.get("/api/me")
+def me(user: dict = Depends(current_user)):
+    return {"id": user["sub"], "username": user["username"], "role": user.get("role"), "full_name": user.get("full_name")}
+
+
+# ---------------------------------------------------------------- GL (Query1-Aset.sql)
+_GL_KINDS = {
+    "aset-konsolidasi": Q.Q_GL_ASET_KONSOLIDASI,
+    "aset-perkantor": Q.Q_GL_ASET_PERKANTOR,
+    "laba-rugi-konsolidasi": Q.Q_GL_PENDAPATAN_KONSOLIDASI,
+    "laba-rugi-perkantor": Q.Q_GL_PENDAPATAN_PERKANTOR,
+}
+
+
+def _gl_range(kdloc: str) -> tuple[str, str]:
+    kdloc = (kdloc or "00").strip() or "00"
+    if kdloc == "00":
+        return "01", "99"
+    return kdloc, kdloc
+
+
+@app.get("/api/gl/offices")
+def gl_offices():
+    return db.run_query(Q.Q_GL_OFFICES)
+
+
+def _gl_as_tahunan(raw: list[dict], kind: str, is_aset: bool, yyyy: str) -> list[dict]:
+    """Rekap per tahun utk granular=tahunan — 1 baris per (tahun, unit)."""
+    if is_aset:
+        # Aset = posisi: ambil saldo Desember tahun berjalan
+        return [r for r in raw if r.get("thn") == yyyy and r.get("bln") == "12"]
+    # Laba rugi = arus: totalkan setahun
+    yr = [r for r in raw if r.get("thn") == yyyy]
+    if not yr:
+        return []
+    if kind.endswith("konsolidasi"):
+        total = sum(int(r.get("saldo") or 0) for r in yr)
+        return [{
+            "keterangan": yr[0].get("keterangan") or "Pendapatan Bulanan Konsolidasi",
+            "judul": "Laba Rugi Konsolidasi", "thn": yyyy, "bln": "12",
+            "saldo": total, "view": "tahunan",
+        }]
+    agg: dict[str, int] = {}
+    ket = yr[0].get("keterangan") or "Pendapatan Bulanan Perkantor"
+    for r in yr:
+        k = r.get("kdloc")
+        agg[k] = agg.get(k, 0) + int(r.get("saldo") or 0)
+    return [{
+        "keterangan": ket, "judul": "Laba Rugi Perkantor",
+        "kdloc": k, "thn": yyyy, "bln": "12", "saldo": v, "view": "tahunan",
+    } for k, v in sorted(agg.items())]
+
+
+@app.get("/api/gl/{kind}")
+def gl_report(
+    kind: str,
+    tahun: str = Query("2023", pattern=r"^\d{4}$"),
+    kdloc: str = Query("00"),
+    granular: str = Query("bulanan", pattern="^(bulanan|tahunan)$"),
+    mulai: str | None = Query(None, pattern=r"^\d{4}$"),
+    akhir: str | None = Query(None, pattern=r"^\d{4}$"),
+):
+    """GL report. bulanan = 1 tahun (param tahun). tahunan = RANGE tahun
+    (mulai..akhir, default tahun..tahun) — 1 baris per tahun per unit."""
+    sql = _GL_KINDS.get(kind)
+    if sql is None:
+        raise HTTPException(status_code=404, detail="Jenis laporan tidak dikenal")
+    kdloc1, kdloc2 = _gl_range(kdloc)
+    is_aset = kind.startswith("aset")
+
+    y0, y1 = mulai or tahun, akhir or (mulai or tahun)
+    if int(y1) < int(y0):
+        y0, y1 = y1, y0
+    if granular != "tahunan":
+        y0 = y1 = tahun  # bulanan = 1 tahun saja, abaikan mulai/akhir
+
+    rows: list[dict] = []
+    for y in range(int(y0), int(y1) + 1):
+        yyyy = str(y)
+        yyold = str(int(yyyy) - 1)
+        if is_aset:
+            params = (yyold, kdloc1, kdloc2, yyyy, yyyy, yyyy, yyyy, kdloc1, kdloc2)
+        else:
+            params = (yyyy, yyyy, yyyy, yyyy, kdloc1, kdloc2)
+        raw = db.run_query(sql, params)
+        if granular == "tahunan":
+            rows.extend(_gl_as_tahunan(raw, kind, is_aset, yyyy))
+        else:
+            rows.extend(raw)
+    if kdloc != "00":
+        rows = [r for r in rows if r.get("kdloc", kdloc) == kdloc]
+    return {
+        "kind": kind, "tahun": tahun, "mulai": y0, "akhir": y1,
+        "kdloc": kdloc, "granular": granular, "rows": rows,
+    }
