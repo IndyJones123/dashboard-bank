@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import api, { formatRupiah } from '../api'
+import ReportsHarian from './ReportsHarian.vue'
+import ReportsDpk from './ReportsDpk.vue'
+import ReportsPiutang from './ReportsPiutang.vue'
+import MoreDetails from './MoreDetails.vue'
+import { formatRpSingkat } from '../report-helpers'
 
 /* ==========================================================================
-   LAPORAN KEUANGAN — cuma 2 jenis laporan:
-     1) Laporan Aset      → /api/gl/aset-konsolidasi + /api/gl/aset-perkantor
-     2) Laporan Laba Rugi → /api/gl/laba-rugi-konsolidasi + /api/gl/laba-rugi-perkantor
-   Tiap jenis = 1 halaman, 2 menu (urut dari atas):
+   LAPORAN KEUANGAN: 5 jenis laporan:
+     1) Laporan Aset      -> /api/gl/aset-konsolidasi + /api/gl/aset-perkantor
+     2) Laporan Laba Rugi -> /api/gl/laba-rugi-konsolidasi + /api/gl/laba-rugi-perkantor
+     3) Laporan Keuangan Harian -> /api/laporan/harian   (komponen ReportsHarian.vue)
+     4) Laporan DPK             -> /api/laporan/dpk      (komponen ReportsDpk.vue)
+     5) Laporan Piutang         -> /api/laporan/piutang  (komponen ReportsPiutang.vue)
+   Jenis 3-5 punya filter & tampilan sendiri di komponennya masing-masing
+   (query sumber: be/QueryData/Laporan-Keuangan-*.sql, port di
+   be/queries_laporan.py, endpoint /api/laporan/* di be/app.py).
+   Untuk jenis GL (1-2), tiap jenis = 1 halaman, 2 menu (urut dari atas):
      - menu 1: konsolidasi SEMUA cabang (kdloc dipaksa '00') + grafik code.html
-     - menu 2: rincian PER KANTOR — filter Kantor + tabel detail (kolom Kantor)
-               + diagram KOMPARASI antar BPRS (beberapa kantor → 1 garis,
+     - menu 2: rincian PER KANTOR, filter Kantor + tabel detail (kolom Kantor)
+               + diagram KOMPARASI antar BPRS (beberapa kantor -> 1 garis,
                tiap BPRS beda warna; urutan: tabel di atas, diagram di bawah)
-   Sumber query: be/QueryData/Query1-Aset.sql (4 query) — sudah port
+   Sumber query: be/QueryData/Query1-Aset.sql (4 query), sudah port
    parameterised di be/queries.py. BE TIDAK PERNAH membaca be/schema.sql
    (itu file buatan, jangan dipakai). Endpoint:
      GET /api/gl/{kind}?tahun=YYYY (bulanan)
@@ -32,21 +43,25 @@ interface GlRow {
 }
 
 // ---- Filter global ----
-// Jenis: 'aset' = Laporan Aset, 'labarugi' = Laporan Laba Rugi
+// Jenis: 'aset'/'labarugi' = laporan GL (filter global di halaman ini);
+// 'harian'/'dpk'/'piutang' = laporan baru, filter & konten di komponen child
 const glKind = ref('aset')
 const glTahun = ref('2023')
-// Range tahun utk mode Tahunan — filter "Tahun" berubah jadi "Dari–s.d."
+// Range tahun utk mode Tahunan, filter "Tahun" berubah jadi "Dari–s.d."
 const glTahunMulai = ref('2021')
 const glTahunAkhir = ref('2024')
 const glYears = ['2021', '2022', '2023', '2024']
 const glGranular = ref<'bulanan' | 'tahunan'>('bulanan')
-// Filter Kantor — HANYA utk menu 2 (rincian per kantor); menu 1 selalu '00'
+// Filter Kantor: HANYA utk menu 2 (rincian per kantor); menu 1 selalu '00'
 const glKdloc = ref('00')
 const glOffices = ref<string[]>([])
-const glKonsRows = ref<GlRow[]>([]) // menu 1 — konsolidasi semua cabang
-const glKantorRows = ref<GlRow[]>([]) // menu 2 — rincian per kantor
+const glKonsRows = ref<GlRow[]>([]) // menu 1: konsolidasi semua cabang
+const glKantorRows = ref<GlRow[]>([]) // menu 2: rincian per kantor
 const glLoading = ref(true)
 const glError = ref('')
+/** Tabel data terperinci: tersembunyi default, dibuka via tombol More details. */
+const glDetKons = ref(false)
+const glDetKantor = ref(false)
 
 /** `detail` dari FastAPI (mis. 503 "Database tidak terjangkau …") bila ada. */
 function apiErrText(e: unknown, fallback: string): string {
@@ -57,13 +72,23 @@ function apiErrText(e: unknown, fallback: string): string {
 const glKindLabel: Record<string, string> = {
   aset: 'Laporan Aset',
   labarugi: 'Laporan Laba Rugi',
+  harian: 'Laporan Keuangan Harian',
+  dpk: 'Laporan DPK',
+  piutang: 'Laporan Piutang',
+}
+
+/** Jenis GL pakai filter/tampilan global halaman ini; selain itu tampil di child. */
+const isGl = computed(() => glKind.value === 'aset' || glKind.value === 'labarugi')
+
+function onKindChange(): void {
+  if (isGl.value) void loadGl()
 }
 const glApiBase = computed(() => (glKind.value === 'aset' ? 'aset' : 'laba-rugi'))
 const glIsAset = computed(() => glKind.value === 'aset')
 const glTitle = computed(() => glKindLabel[glKind.value] ?? glKind.value)
 
 function shortMonth(bln: string): string {
-  // bln bisa 'MM' (query/mock) atau 'YYYY-MM' — ambil 2 digit bulan terakhir
+  // bln bisa 'MM' (query/mock) atau 'YYYY-MM', ambil 2 digit bulan terakhir
   const m = bln.length > 2 ? bln.slice(-2) : bln
   const names: Record<string, string> = {
     '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', '05': 'Mei', '06': 'Jun',
@@ -82,7 +107,7 @@ function glPeriodLabel(r: GlRow): string {
   return glMonthLabel(r)
 }
 
-// thn/bln/kdloc bisa number di DB asli — dinormalkan ke string saat terima data
+// thn/bln/kdloc bisa number di DB asli, dinormalkan ke string saat terima data
 async function fetchGl(kind: string, kdloc: string): Promise<GlRow[]> {
   const params: Record<string, string> =
     glGranular.value === 'tahunan'
@@ -102,11 +127,12 @@ async function fetchGl(kind: string, kdloc: string): Promise<GlRow[]> {
 }
 
 async function loadGl(): Promise<void> {
+  if (!isGl.value) return // jenis non-GL di-fetch komponen child masing-masing
   glLoading.value = true
   glError.value = ''
   try {
     const base = glApiBase.value
-    // perkantor SELALU '00' (semua kantor) — cukup 1 fetch: tabel filter
+    // perkantor SELALU '00' (semua kantor), cukup 1 fetch: tabel filter
     // Kantor client-side, diagram komparasi multi-kantor pakai baris yang sama
     const [kons, kantor] = await Promise.all([
       fetchGl(`${base}-konsolidasi`, '00'),
@@ -158,7 +184,7 @@ const glPeriodText = computed(() =>
 )
 const glEndYear = computed(() => (glGranular.value === 'bulanan' ? glTahun.value : glTahunAkhir.value))
 
-// Urutan tabel: per kantor dulu (blok kantor), baru thn/bln —
+// Urutan tabel: per kantor dulu (blok kantor), baru thn/bln;
 // disamakan dgn ORDER BY query asli (kdloc, thn, bln) apa pun mode mock/real
 function sortGl(rows: GlRow[], grouped: boolean): GlRow[] {
   return [...rows].sort((a, b) => {
@@ -186,15 +212,15 @@ const glKantorTable = computed(() =>
 )
 
 /* ==========================================================================
-   Diagram komparasi antar BPRS (menu 2) — beberapa kantor → 1 diagram GARIS,
-   tiap BPRS beda warna. Palet diurutkan per kdloc → warna stabil antar sesi.
-   Sumber: glKantorRows (semua kantor) — independen dari filter Kantor tabel.
+   Diagram komparasi antar BPRS (menu 2): beberapa kantor -> 1 diagram GARIS,
+   tiap BPRS beda warna. Palet diurutkan per kdloc -> warna stabil antar sesi.
+   Sumber: glKantorRows (semua kantor), independen dari filter Kantor tabel.
    Geometri: viewBox 960×340, plot x 64..944 / y 16..304, skala DARI NOL
    (komparasi jujur antar kantor; berbeda dgn bar code.html yang zoom).
    ========================================================================== */
 const DIAG_COLORS = ['#059669', '#0A192F', '#D97706', '#0284C7', '#7C3AED', '#E11D48', '#0D9488', '#DB2777']
 
-// null = belum pernah dipilih → default SEMUA kantor tampil
+// null = belum pernah dipilih -> default SEMUA kantor tampil
 const glCompare = ref<string[] | null>(null)
 const glKantors = computed(() =>
   [...new Set(glKantorRows.value.map((r) => r.kdloc ?? '').filter(Boolean))].sort(),
@@ -238,6 +264,8 @@ interface DiagState {
   xTicks: { x: number; label: string }[]
   grid: { y: number; label: string }[]
   aria: string
+  scale: number
+  suffix: string
 }
 const glDiag = computed<DiagState | null>(() => {
   const sel = glCompareSel.value
@@ -303,8 +331,17 @@ const glDiag = computed<DiagState | null>(() => {
           : `${((yMax * g) / 4 / scale).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${suffix}`,
     })),
     aria: `Diagram garis komparasi ${glTitle.value} ${glPeriodText.value} antar BPRS ${sel.join(', ')}`,
+    scale,
+    suffix,
   }
 })
+
+/** Label nilai per titik diagram komparasi: format sumbu diagram (Jt/M/T), ≤2 desimal. */
+function glDiagLabel(v: number): string {
+  const d = glDiag.value
+  if (!d) return ''
+  return `${(v / d.scale).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${d.suffix}`
+}
 
 // Baris grafik menu 1: bulanan -> 12 bulan tahun berjalan (carry-over utk baseline);
 // tahunan -> 1 baris per tahun dlm range. Carry-over = thn < tahun berjalan (aman utk DB asli).
@@ -319,7 +356,7 @@ const glChartRows = computed(() =>
 )
 const glMax = computed(() => Math.max(1, ...glChartRows.value.map((r) => r.saldo)))
 
-// Satuan sumbu otomatis: Jt / M (miliar) / T (triliun) — angka tetap tabular
+// Satuan sumbu otomatis: Jt / M (miliar) / T (triliun), angka tetap tabular
 const glScale = computed(() => (glMax.value >= 1e12 ? 1e12 : glMax.value >= 1e9 ? 1e9 : 1e6))
 const glSuffix = computed(() => (glScale.value === 1e12 ? 'T' : glScale.value === 1e9 ? 'M' : 'Jt'))
 
@@ -331,7 +368,7 @@ const glStok = computed(() => {
 })
 const glSum = computed(() => {
   if (glGranular.value === 'bulanan') return glChartRows.value.reduce((s, r) => s + r.saldo, 0)
-  // tahunan range: arus diambil tahun AKHIR — jumlah lintas tahun tidak bermakna
+  // tahunan range: arus diambil tahun AKHIR, jumlah lintas tahun tidak bermakna
   const last = glChartRows.value[glChartRows.value.length - 1]
   return last ? last.saldo : 0
 })
@@ -348,7 +385,7 @@ const glLastDelta = computed(() => {
 })
 
 /* ==========================================================================
-   Grafik bar DOM — mengikuti fe/Documentation/Laporan-Aset/code.html
+   Grafik bar DOM: mengikuti fe/Documentation/Laporan-Aset/code.html
    Section 1 "Pergerakan Posisi Aset Konsolidasi Bulanan":
    baseline bar Des thn lalu (abu) + garis dashed, 12 bar emerald,
    value muncul saat hover, bar terakhir (Des) selalu tampil + highlight,
@@ -363,6 +400,12 @@ function glCompact(v: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+  return `${n} ${glSuffix.value}`
+}
+
+/** Label nilai di atas tiap batang: ≤1 desimal biar muat di slot bar. */
+function glBarLabel(v: number): string {
+  const n = (v / glScale.value).toLocaleString('id-ID', { maximumFractionDigits: 1 })
   return `${n} ${glSuffix.value}`
 }
 
@@ -419,16 +462,16 @@ const glQuarters = computed(() => {
     .filter((x) => x.val > 0)
 })
 function qPct(p: number | null): string {
-  if (p === null) return '—'
+  if (p === null) return '–'
   return (p > 0 ? '+' : '') + p.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'
 }
 
 /* ==========================================================================
    3 kolom "Rincian": Pertumbuhan % / Rp / Status Kinerja (mode bulanan)
    Δ = baris ini − baris sebelumnya, dengan aturan:
-   - baris carry-over sendiri / baris pertama / ganti kantor → "—"
+   - baris carry-over sendiri / baris pertama / ganti kantor -> "–"
    - Aset: Jan dibanding carry-over Des thn lalu
-   tahunan: Δ = tahun ini − tahun sebelumnya (YoY, baris pertama range = "—")
+   tahunan: Δ = tahun ini − tahun sebelumnya (YoY, baris pertama range = "–")
    ========================================================================== */
 const glHasGrowth = true
 
@@ -449,11 +492,11 @@ function growthAt(rows: GlRow[], i: number): Growth {
   return { abs, pct: (abs / prev.saldo) * 100, status: abs > 0 ? 'up' : abs < 0 ? 'down' : 'flat' }
 }
 function pctStr(p: number | null): string {
-  if (p === null) return '—'
+  if (p === null) return '–'
   return (p > 0 ? '+' : '') + p.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 }
 function absStr(a: number | null): string {
-  if (a === null) return '—'
+  if (a === null) return '–'
   if (a > 0) return `+ ${formatRupiah(a)}`
   if (a < 0) return `- ${formatRupiah(Math.abs(a))}`
   return formatRupiah(0)
@@ -462,7 +505,7 @@ function statusClass(g: Growth): string {
   return `chip ${g.status === 'up' ? 'up' : g.status === 'down' ? 'down' : 'neutral'}`
 }
 function statusText(g: Growth): string {
-  if (g.status === null) return '—'
+  if (g.status === null) return '–'
   return g.status === 'up' ? 'Tumbuh' : g.status === 'down' ? 'Menurun' : 'Stabil'
 }
 
@@ -480,28 +523,30 @@ onMounted(async () => {
           Powered By IBA System
         </p>
       </div>
-      <span class="badge info">Laporan Keuangan  </span>
     </div>
 
-    <!-- Filter global — Jenis (2) + Tahun (bulanan) / range Dari–s.d. (tahunan)
+    <!-- Filter global: Jenis (2) + Tahun (bulanan) / range Dari–s.d. (tahunan)
          + granularitas; Kantor ada di menu 2 -->
     <section class="panel">
       <div class="toolbar">
         <div class="filters">
           <label>
             Jenis
-            <select v-model="glKind" @change="loadGl">
+            <select v-model="glKind" @change="onKindChange">
               <option value="aset">Laporan Aset</option>
               <option value="labarugi">Laporan Laba Rugi</option>
+              <option value="harian">Laporan Keuangan Harian</option>
+              <option value="dpk">Laporan DPK</option>
+              <option value="piutang">Laporan Piutang</option>
             </select>
           </label>
-          <label v-if="glGranular === 'bulanan'">
+          <label v-if="isGl && glGranular === 'bulanan'">
             Tahun
             <select v-model="glTahun" @change="loadGl">
               <option v-for="y in glYears" :key="y" :value="y">{{ y }}</option>
             </select>
           </label>
-          <label v-if="glGranular === 'tahunan'">
+          <label v-if="isGl && glGranular === 'tahunan'">
             Dari Tahun
             <select
               :value="glTahunMulai"
@@ -510,7 +555,7 @@ onMounted(async () => {
               <option v-for="y in glYears" :key="y" :value="y">{{ y }}</option>
             </select>
           </label>
-          <label v-if="glGranular === 'tahunan'">
+          <label v-if="isGl && glGranular === 'tahunan'">
             s.d. Tahun
             <select
               :value="glTahunAkhir"
@@ -521,7 +566,7 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div class="segmented" role="group" aria-label="Granularitas laporan">
+        <div v-if="isGl" class="segmented" role="group" aria-label="Granularitas laporan">
           <button type="button" :class="{ on: glGranular === 'bulanan' }" @click="setGran('bulanan')">
             Bulanan
           </button>
@@ -532,11 +577,12 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Metric callouts — angka dari menu 1 (konsolidasi semua cabang) -->
+    <!-- Metric callouts: angka dari menu 1 (konsolidasi semua cabang) -->
+    <template v-if="isGl">
     <section class="cards">
       <div class="card metric">
         <span class="label">{{ glTotalLabel }}</span>
-        <strong class="num">{{ glLoading ? '—' : formatRupiah(glTotal) }}</strong>
+        <strong class="num">{{ glLoading ? '–' : formatRupiah(glTotal) }}</strong>
         <span v-if="glLastDelta !== null" :class="['chip', glLastDelta >= 0 ? 'up' : 'down']">
           <i class="dot" aria-hidden="true" />
           {{ glLastDelta >= 0 ? '+' : '' }}{{ glLastDelta.toFixed(1) }}%
@@ -564,12 +610,12 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- ================= MENU 1 — KONSOLIDASI SEMUA CABANG ================= -->
+    <!-- ================= MENU 1: KONSOLIDASI SEMUA CABANG ================= -->
     <section class="panel">
-      <h2>{{ glTitle }} — Konsolidasi Semua Cabang</h2>
+      <h2>{{ glTitle }}: Konsolidasi Semua Cabang</h2>
       <p class="sub">
         {{ glTotalLabel }}: <strong class="num">{{ glLoading ? 'Memuat…' : formatRupiah(glTotal) }}</strong>
-        — {{ glChartRows.length }} baris grafik
+        · {{ glChartRows.length }} baris grafik
         <span v-if="glLastDelta !== null" :class="['delta', glLastDelta >= 0 ? 'up' : 'down']">
           {{ glLastDelta >= 0 ? '▲' : '▼' }} {{ Math.abs(glLastDelta).toFixed(1) }}%
           {{ glGranular === 'bulanan' ? 'MoM' : 'YoY' }}
@@ -648,6 +694,15 @@ onMounted(async () => {
             <text
               v-if="glChartRows.length <= 13"
               :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
+              :y="220 - (r.saldo / glMax) * 190 - 4"
+              text-anchor="middle"
+              font-size="9"
+              font-weight="700"
+              fill="#191c1e"
+            >{{ glBarLabel(r.saldo) }}</text>
+            <text
+              v-if="glChartRows.length <= 13"
+              :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
               y="238"
               text-anchor="middle"
               font-size="10"
@@ -658,12 +713,13 @@ onMounted(async () => {
           </g>
         </svg>
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #059669" />{{ glTitle }} — {{ glPeriodText }}</span>
+          <span><i class="swatch" style="background: #059669" />{{ glTitle }}: {{ glPeriodText }}</span>
         </div>
       </div>
 
-      <!-- Tabel rincian konsolidasi -->
+      <!-- Data terperinci konsolidasi: tersembunyi default, tombol More details -->
       <template v-if="!glLoading && !glError && glKonsTable.length">
+        <MoreDetails id="det-gl-kons" :open="glDetKons" @toggle="glDetKons = !glDetKons">
         <div class="table-scroll">
 
         <table>
@@ -680,7 +736,7 @@ onMounted(async () => {
           <tbody>
             <tr v-for="(r, i) in glKonsTable" :key="i">
               <td>{{ glPeriodLabel(r) }}</td>
-              <td class="ta-r num">{{ formatRupiah(r.saldo) }}</td>
+              <td class="ta-r num" :title="formatRupiah(r.saldo)">{{ formatRpSingkat(r.saldo) }}</td>
               <template v-if="glHasGrowth">
                 <td class="ta-r num" :class="growthAt(glKonsTable, i).pct !== null ? (growthAt(glKonsTable, i).pct! >= 0 ? 'g-up' : 'g-down') : 'muted'">
                   {{ pctStr(growthAt(glKonsTable, i).pct) }}
@@ -700,20 +756,21 @@ onMounted(async () => {
           </tbody>
         </table>
         </div>
+        </MoreDetails>
       </template>
     </section>
 
-    <!-- ================= MENU 2 — RINCIAN PER KANTOR ================= -->
+    <!-- ================= MENU 2: RINCIAN PER KANTOR ================= -->
     <section class="panel">
       <div class="toolbar">
         <div>
-          <h2>{{ glTitle }} — Rincian per Kantor</h2>
+          <h2>{{ glTitle }}: Rincian per Kantor</h2>
         </div>
         <div class="filters">
           <label>
             Kantor
             <select v-model="glKdloc">
-              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 — Semua' : k }}</option>
+              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 (Semua)' : k }}</option>
             </select>
           </label>
         </div>
@@ -721,54 +778,17 @@ onMounted(async () => {
 
       <p v-if="glLoading" class="muted">Memuat data GL…</p>
       <p v-else-if="glError" class="alert">{{ glError }}</p>
-      <p v-else-if="!glKantorTable.length" class="muted">Belum ada data untuk filter ini.</p>
-      <div v-else class="table-scroll">
-        <table>
-        <thead>
-          <tr>
-            <th>Kantor</th>
-            <th>Periode</th>
-            <th class="ta-r">Saldo</th>
-            <th v-if="glHasGrowth" class="ta-r">Pertumbuhan (%)</th>
-            <th v-if="glHasGrowth" class="ta-r">Pertumbuhan (Rp)</th>
-            <th v-if="glHasGrowth" class="ta-c">Status Kinerja</th>
-            <th>Keterangan</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(r, i) in glKantorTable" :key="i">
-            <td class="num">{{ r.kdloc ?? '—' }}</td>
-            <td>{{ glPeriodLabel(r) }}</td>
-            <td class="ta-r num">{{ formatRupiah(r.saldo) }}</td>
-            <template v-if="glHasGrowth">
-              <td class="ta-r num" :class="growthAt(glKantorTable, i).pct !== null ? (growthAt(glKantorTable, i).pct! >= 0 ? 'g-up' : 'g-down') : 'muted'">
-                {{ pctStr(growthAt(glKantorTable, i).pct) }}
-              </td>
-              <td class="ta-r num" :class="growthAt(glKantorTable, i).abs !== null ? (growthAt(glKantorTable, i).abs! >= 0 ? 'g-up' : 'g-down') : 'muted'">
-                {{ absStr(growthAt(glKantorTable, i).abs) }}
-              </td>
-              <td class="ta-c">
-                <span :class="statusClass(growthAt(glKantorTable, i))">
-                  <i class="dot" aria-hidden="true" />
-                  {{ statusText(growthAt(glKantorTable, i)) }}
-                </span>
-              </td>
-            </template>
-            <td class="muted small">{{ r.keterangan }}</td>
-          </tr>
-        </tbody>
-        </table>
-      </div>
+      <p v-else-if="!glKantorTable.length" class="muted">Belum ada data untuk filter ini. Coba ganti tahun, rentang tanggal, atau kantor.</p>
 
-      <!-- ============ Diagram komparasi antar BPRS (di bawah tabel) ============
-           Beberapa kantor dalam 1 diagram garis — tiap BPRS beda warna garis -->
+      <!-- ============ Diagram komparasi antar BPRS (grafik menu 2) ============
+           Beberapa kantor dalam 1 diagram garis, tiap Lokasi beda warna garis -->
       <div v-if="!glLoading && !glError && glKantors.length" class="compare">
         <div class="compare-head">
           <div>
-            <h3>Diagram Komparasi Antar BPRS</h3>
+            <h3>Diagram Komparasi Antar Lokasi</h3>
             <p class="muted small">
-              Pilih BPRS untuk ditampilkan bersamaan dalam 1 diagram garis —
-              tiap BPRS memiliki warna garis sendiri. Sumbu-X mengikuti filter periode
+              Pilih Lokasi untuk ditampilkan bersamaan dalam 1 diagram garis,
+              tiap Lokasi memiliki warna garis sendiri. Sumbu-X mengikuti filter periode
               di atas: bulan (Bulanan) atau tahun dalam range (Tahunan).
             </p>
           </div>
@@ -811,10 +831,18 @@ onMounted(async () => {
                 stroke-linejoin="round"
                 stroke-linecap="round"
               />
-              <g v-for="p in l.pts" :key="`${l.kdloc}-${p.label}`">
+              <g v-for="(p, pi) in l.pts" :key="`${l.kdloc}-${p.label}`">
                 <circle :cx="p.x" :cy="p.y" r="3" :fill="l.color">
                   <title>BPRS {{ l.kdloc }} · {{ p.label }}: {{ formatRupiah(p.saldo) }}</title>
                 </circle>
+                <!-- Nilai terlihat di atas tiap titik (halo putih biar kebaca di atas garis) -->
+                <text
+                  :x="p.x" :y="p.y - 7"
+                  :text-anchor="pi === 0 ? 'start' : pi === l.pts.length - 1 ? 'end' : 'middle'"
+                  font-size="9" font-weight="700" fill="#191c1e"
+                  stroke="#fff" stroke-width="2.5" paint-order="stroke"
+                  style="pointer-events: none"
+                >{{ glDiagLabel(p.saldo) }}</text>
               </g>
             </g>
           </svg>
@@ -827,6 +855,57 @@ onMounted(async () => {
         </div>
         <p v-else-if="glKantors.length && !glCompareSel.length" class="muted small">Pilih minimal 1 BPRS untuk menampilkan diagram komparasi.</p>
       </div>
+
+      <!-- Data terperinci per kantor: tersembunyi default, tombol More details -->
+      <template v-if="!glLoading && !glError && glKantorTable.length">
+        <MoreDetails id="det-gl-kantor" :open="glDetKantor" @toggle="glDetKantor = !glDetKantor">
+        <div class="table-scroll">
+          <table>
+          <thead>
+            <tr>
+              <th>Kantor</th>
+              <th>Periode</th>
+              <th class="ta-r">Saldo</th>
+              <th v-if="glHasGrowth" class="ta-r">Pertumbuhan (%)</th>
+              <th v-if="glHasGrowth" class="ta-r">Pertumbuhan (Rp)</th>
+              <th v-if="glHasGrowth" class="ta-c">Status Kinerja</th>
+              <th>Keterangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(r, i) in glKantorTable" :key="i">
+              <td class="num">{{ r.kdloc ?? '–' }}</td>
+              <td>{{ glPeriodLabel(r) }}</td>
+              <td class="ta-r num" :title="formatRupiah(r.saldo)">{{ formatRpSingkat(r.saldo) }}</td>
+              <template v-if="glHasGrowth">
+                <td class="ta-r num" :class="growthAt(glKantorTable, i).pct !== null ? (growthAt(glKantorTable, i).pct! >= 0 ? 'g-up' : 'g-down') : 'muted'">
+                  {{ pctStr(growthAt(glKantorTable, i).pct) }}
+                </td>
+                <td class="ta-r num" :class="growthAt(glKantorTable, i).abs !== null ? (growthAt(glKantorTable, i).abs! >= 0 ? 'g-up' : 'g-down') : 'muted'">
+                  {{ absStr(growthAt(glKantorTable, i).abs) }}
+                </td>
+                <td class="ta-c">
+                  <span :class="statusClass(growthAt(glKantorTable, i))">
+                    <i class="dot" aria-hidden="true" />
+                    {{ statusText(growthAt(glKantorTable, i)) }}
+                  </span>
+                </td>
+              </template>
+              <td class="muted small">{{ r.keterangan }}</td>
+            </tr>
+          </tbody>
+          </table>
+        </div>
+        </MoreDetails>
+      </template>
     </section>
+    </template><!-- /isGl -->
+
+    <!-- Laporan non-GL: filter & konten masing-masing di komponen child -->
+    <template v-else>
+      <ReportsHarian v-if="glKind === 'harian'" />
+      <ReportsDpk v-else-if="glKind === 'dpk'" />
+      <ReportsPiutang v-else-if="glKind === 'piutang'" />
+    </template>
   </div>
 </template>

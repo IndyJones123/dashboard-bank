@@ -26,9 +26,9 @@ watch(() => route.path, () => {
 })
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
-  // Esc: tutup drawer (mobile) DAN/KALAU sedang present → keluar present mode.
-  // (Saat fullscreen aktif, browser juga memicu fullscreenchange → exitPresent
-  // berjalan dua kali dengan aman — isPresent sudah false di panggilan kedua.)
+  // Esc: tutup drawer (mobile) DAN/KALAU sedang present -> keluar present mode.
+  // (Saat fullscreen aktif, browser juga memicu fullscreenchange -> exitPresent
+  // berjalan dua kali dengan aman, isPresent sudah false di panggilan kedua.)
   if (sideOpen.value) sideOpen.value = false
   if (isPresent.value) void exitPresent()
 }
@@ -37,7 +37,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 /* ---- Present Mode ----
    Pindah ke /reports dulu (guard auth boleh redirect ke login), baru masuk
-   fullscreen — present tidak pernah aktif di halaman lain. */
+   fullscreen, present tidak pernah aktif di halaman lain. */
 function onPresent() {
   const go = route.path === '/reports' ? Promise.resolve() : router.push('/reports')
   void go.then(() => {
@@ -56,7 +56,7 @@ function onLogout() {
     <!-- Navbar putih full-width (ref: clip_20261015_094010_3) -->
     <header class="topbar">
       <div class="top-left">
-        <!-- Hamburger — hanya tampil di layar ≤860px -->
+        <!-- Hamburger: hanya tampil di layar ≤860px -->
         <button
           type="button"
           class="side-toggle"
@@ -84,7 +84,7 @@ function onLogout() {
 
       <div class="top-actions">
         <span class="top-context">{{ topContext }}</span>
-        <!-- Present Mode: klik → pindah ke /reports + mode fullscreen slideshow -->
+        <!-- Present Mode: klik -> pindah ke /reports + mode fullscreen slideshow -->
         <button type="button" class="btn-navy" aria-label="Present Mode" @click="onPresent">
           <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 4h18v12H3zM8 20h8M12 16v4" />

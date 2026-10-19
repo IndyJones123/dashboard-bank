@@ -14,7 +14,9 @@ api.interceptors.request.use((config) => {
 
 export default api
 
-export function formatRupiah(n: number | string): string {
+export function formatRupiah(n: number | string | null | undefined): string {
+  // null/undefined dari API: placeholder '–' (bukan 'Rp 0' / crash; Number.isNaN(null) = false)
+  if (n === null || n === undefined) return '–'
   const num = typeof n === 'string' ? Number(n) : n
   if (Number.isNaN(num)) return String(n)
   return 'Rp ' + num.toLocaleString('id-ID')

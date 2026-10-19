@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover
 import auth
 import db
 import queries as Q
+import queries_laporan as QL
 
 app = FastAPI(title="Bank Dashboard API", version="1.0.0")
 
@@ -255,3 +256,58 @@ def gl_report(
         "kind": kind, "tahun": tahun, "mulai": y0, "akhir": y1,
         "kdloc": kdloc, "granular": granular, "rows": rows,
     }
+
+
+# ---------------------------------------------------------------------------
+# LAPORAN KEUANGAN BARU — port dari be/QueryData/Laporan-Keuangan-*.sql
+# (file sumber legacy IBA, skrg jadi query resmi lewat db.run_query:
+#  MOCK_MODE=1 -> fixtures queries.py, MOCK_MODE=0 -> SQL Server asli)
+# ---------------------------------------------------------------------------
+
+def _norm_saldo_series(raw: list[dict]) -> list[dict]:
+    """Kolom hasil UNION ALL query DPK/Piutang bernama 'tgl31' (nama kolom dari
+    SELECT pertama) — dinamai ulang 'saldo' biar konsisten dgn laporan GL."""
+    out: list[dict] = []
+    for r in raw:
+        d = {k: r.get(k) for k in ("ket", "golac", "kdloc", "thn", "bln") if k in r}
+        d["saldo"] = r.get("saldo", r.get("tgl31"))
+        out.append(d)
+    return out
+
+
+@app.get("/api/laporan/harian")
+def laporan_harian(
+    tanggal: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+):
+    """Laporan Keuangan Harian (Laporan-Keuangan-Harian.sql) — 18 baris posisi
+    harian: Kas, Bank, dropping, outstanding pokok, angsuran/pelunasan
+    (hari ini & bulan ini), NPL/NPF OJK+internal, pendapatan/biaya/laba rugi.
+    Filter kantor dilakukan di SQL (range kodeloc); NPF (urut 12 & 14) = persen."""
+    tglf = tanggal.replace("-", "")  # format query lama: YYYYMMDD
+    rows = db.run_query(QL.Q_LAPORAN_HARIAN, (tglf, kdloc))
+    return {"tanggal": tanggal, "kdloc": kdloc, "rows": rows}
+
+
+@app.get("/api/laporan/dpk")
+def laporan_dpk(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+):
+    """Laporan DPK (Laporan-Keuangan-DPK.sql) — Tabungan + Deposito per kantor,
+    bulanan: carry-over Des tahun lalu + 12 bulan tahun berjalan."""
+    tab = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_DPK_TABUNGAN, (tahun, kdloc)))
+    dep = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_DPK_DEPOSITO, (tahun, kdloc)))
+    return {"tahun": tahun, "kdloc": kdloc, "rows": tab + dep}
+
+
+@app.get("/api/laporan/piutang")
+def laporan_piutang(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+):
+    """Laporan Piutang (Laporan-Keuangan-Piutang.sql) — total piutang bulanan
+    per kantor + rincian per golongan akun (golac) dari SETUPLOAN/SETUPASET."""
+    rows = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG, (tahun, kdloc)))
+    golac = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG_GOLAC, (tahun, kdloc)))
+    return {"tahun": tahun, "kdloc": kdloc, "rows": rows, "golac": golac}

@@ -442,9 +442,129 @@ def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     if name in ("gl_aset_konsolidasi", "gl_aset_perkantor",
                 "gl_pendapatan_konsolidasi", "gl_pendapatan_perkantor"):
         return _mock_gl(name, params)
+    if name == "laporan_harian":
+        return _mock_lkh(params)
+    if name in ("dpk_tabungan", "dpk_deposito", "piutang"):
+        return _mock_dpk(params, name)
+    if name == "piutang_golac":
+        return _mock_piutang_golac(params)
 
     return []
 
 
 def mock_write(sql: str, params: tuple | list = ()) -> int:
     return 1
+
+
+# ---------------------------------------------------------------------------
+# MOCK LAPORAN KEUANGAN (queries_laporan.py — Harian / DPK / Piutang)
+# Sumber data: be/QueryData/Laporan-Keuangan-{Harian,DPK,Piutang}.sql
+# Deterministik dari seed (tglf / yyyy) supaya stabil antar request.
+# ---------------------------------------------------------------------------
+
+_OFFICES = ("01", "02", "03")
+_OFFICE_W = {"01": 1.0, "02": 0.72, "03": 0.55}  # bobot per kantor utk agregasi konsol
+
+
+def _offices_from(params: tuple | list) -> list[str]:
+    """kdloc param terakhir; '00'/absen -> semua kantor."""
+    kdloc = str(params[-1]).strip() if params else "00"
+    return list(_OFFICES) if kdloc in ("", "00") else [kdloc if kdloc in _OFFICE_W else _OFFICES[0]]
+
+
+def _lkh_factor(params: tuple | list) -> float:
+    """Skala LKH tergantung filter kantor: '00' -> semua (1.0), sebagian -> proporsional."""
+    kdloc = str(params[-1]).strip() if params else "00"
+    if kdloc in ("", "00"):
+        return 1.0
+    total = sum(_OFFICE_W.values())
+    return _OFFICE_W.get(kdloc, _OFFICE_W[_OFFICES[0]]) / total
+
+
+# (urut, ket, base saldo konsolidasi per hari, volatilitas)
+_LKH_ROWS: list[tuple[str, str, int, int]] = [
+    ("01", "Kas", 2_400_000_000, 150_000_000),
+    ("02", "Bank", 85_000_000_000, 900_000_000),
+    ("03", "Droping hari ini", 1_750_000_000, 900_000_000),
+    ("04", "OS Pokok Harian/Mingguan", 118_500_000_000, 1_200_000_000),
+    ("05", "OS Pokok Bulanan", 352_000_000_000, 1_600_000_000),
+    ("06", "Total OS Pokok", 470_500_000_000, 2_500_000_000),
+    ("07", "Angsuran dan Pelunasan Pokok Hari ini", 2_900_000_000, 1_500_000_000),
+    ("08", "Angsuran dan Pelunasan Margin Hari ini", 410_000_000, 210_000_000),
+    ("09", "Angsuran dan Pelunasan Pokok Bulan ini", 62_000_000_000, 4_000_000_000),
+    ("10", "Angsuran dan Pelunasan Margin Bulan ini", 8_700_000_000, 600_000_000),
+    ("11", "NPL OJK", 21_800_000_000, 500_000_000),
+    ("12", "NPF OJK (%)", 464, 2),  # x100 — tampil 4.64%
+    ("13", "NPL Internal", 15_400_000_000, 400_000_000),
+    ("14", "NPF Internal (%)", 328, 2),  # tampil 3.28%
+    ("15", "Pendapatan Bulan ini", 14_800_000_000, 900_000_000),
+    ("16", "Biaya Bulan ini", 6_100_000_000, 400_000_000),
+    ("17", "Rugi Laba Bulan ini", 8_700_000_000, 700_000_000),
+    ("18", "Rugi Laba Bulan Berjalan", 9_150_000_000, 800_000_000),
+]
+_LKH_PERCENT = {"12", "14"}  # NPF persen, bukan Rupiah
+
+
+def _mock_lkh(params: tuple | list) -> list[dict[str, Any]]:
+    """18 baris konsolidasi persis bentuk query asli: {urut, ket, saldo}."""
+    tglf = str(params[0]) if params else "20250629"
+    n = int(tglf[6:8])
+    f = _lkh_factor(params)
+    rows: list[dict[str, Any]] = []
+    for urut, ket, base, vol in _LKH_ROWS:
+        if urut in _LKH_PERCENT:
+            jitter = ((n * 17 + 7) % 5) - 2
+            rows.append({"urut": urut, "ket": ket, "saldo": round((base + jitter) / 100, 2)})
+        else:
+            jitter = ((n * 37 + int(urut) * 13) % 15) - 7  # -7..+7 persen
+            saldo = int(base * f * (100 + jitter) / 100) + int(vol * f * ((n * 7 + 3) % 9))
+            rows.append({"urut": urut, "ket": ket, "saldo": saldo})
+    return rows
+
+
+def _series(kdloc: str, base: float, grow: float, thn: str, ket: str) -> list[dict[str, Any]]:
+    """13 baris: carry-over Des thn-1 (tgl11) + 12 bulan thn berjalan (tgl28..31)."""
+    y = int(thn)
+    w = _OFFICE_W.get(kdloc, 1.0)
+    rows = [{
+        "ket": ket, "kdloc": kdloc, "thn": str(y - 1), "bln": "12",
+        "tgl31": int(base * w * 0.92), "tgl28": 0, "tgl29": 0, "tgl30": 0,
+    }]
+    for m in range(1, 13):
+        v = int((base + grow * m) * w)
+        row: dict[str, Any] = {
+            "ket": ket, "kdloc": kdloc, "thn": thn, "bln": f"{m:02d}",
+            "tgl31": 0, "tgl28": 0, "tgl29": 0, "tgl30": 0,
+        }
+        # Feb pakai tgl28/29 (kabisat) — sisanya tgl31 (pola query asli)
+        if m == 2:
+            row["tgl28" if y % 4 != 0 or (y % 100 == 0 and y % 400 != 0) else "tgl29"] = v
+        else:
+            row["tgl31"] = v
+        rows.append(row)
+    return rows
+
+
+def _mock_dpk(params: tuple | list, which: str) -> list[dict[str, Any]]:
+    thn = str(params[0]) if params else "2024"
+    specs = {
+        "dpk_tabungan": ("DPK Tabungan", 210_000_000_000, 3_800_000_000),
+        "dpk_deposito": ("DPK Deposito", 96_000_000_000, 1_900_000_000),
+        "piutang": ("Piutang", 385_000_000_000, 4_600_000_000),
+    }
+    ket, base, grow = specs[which]
+    rows: list[dict[str, Any]] = []
+    for k in _offices_from(params):
+        rows.extend(_series(k, base, grow, thn, ket))
+    return rows
+
+
+def _mock_piutang_golac(params: tuple | list) -> list[dict[str, Any]]:
+    thn = str(params[0]) if params else "2024"
+    rows: list[dict[str, Any]] = []
+    for g, base, grow in (("1", 385_000_000_000, 4_600_000_000), ("2", 34_000_000_000, 400_000_000)):
+        for k in _offices_from(params):
+            for r in _series(k, base, grow, thn, "Rincian Piutang"):
+                r["golac"] = g
+                rows.append(r)
+    return rows

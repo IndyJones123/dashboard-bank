@@ -1,16 +1,16 @@
 import { ref } from 'vue'
 
 /* ==========================================================================
-   PRESENT MODE — mode fullscreen untuk slideshow presentasi.
+   PRESENT MODE: mode fullscreen untuk slideshow presentasi.
    Tombol "Present Mode" di topbar memanggil enterPresent():
-     1. Fullscreen API diaktifkan (documentElement) → layar penuh tanpa chrome
-     2. class `present-mode` dipasang di <body> → topbar/sidebar disembunyikan
-        CSS, konten melebar (max-width 1600px) — slide jadi bersih.
+     1. Fullscreen API diaktifkan (documentElement) -> layar penuh tanpa chrome
+     2. class `present-mode` dipasang di <body> -> topbar/sidebar disembunyikan
+        CSS, konten melebar (max-width 1600px), slide jadi bersih.
    Kalau Fullscreen API ditolak/tidak tersedia (mis. iOS/iPadOS Safari),
-   class CSS tetap dipasang → tampilan present tetap rapi walau chrome
+   class CSS tetap dipasang -> tampilan present tetap rapi walau chrome
    browser masih terlihat (fallback).
    Keluar: tombol mengambang "Keluar Present", Esc (native fullscreen /
-   fallback), atau fullscreenchange (user keluar sendiri) → state disinkronkan.
+   fallback), atau fullscreenchange (user keluar sendiri) -> state disinkronkan.
    ========================================================================== */
 
 export const isPresent = ref(false)
@@ -24,7 +24,7 @@ export async function enterPresent(): Promise<void> {
       await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
     }
   } catch {
-    /* ditolak policy / tidak didukung → biarkan, CSS fallback sudah aktif */
+    /* ditolak policy / tidak didukung -> biarkan, CSS fallback sudah aktif */
   }
 }
 

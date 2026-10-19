@@ -29,7 +29,7 @@ async function onSubmit(): Promise<void> {
   <div class="login-wrap">
     <form class="login-card" @submit.prevent="onSubmit">
       <h1>Login Bank</h1>
-      <p class="muted">Akun mock — admin/admin123 · user/user123</p>
+      <p class="muted">Akun mock: admin/admin123 · user/user123</p>
       <label>
         Username
         <input v-model="username" type="text" autocomplete="username" required />

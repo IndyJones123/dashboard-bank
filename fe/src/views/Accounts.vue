@@ -31,7 +31,7 @@ onMounted(async () => {
 <template>
   <div class="page">
     <h1>Data Rekening <span class="badge in">LOGIN</span></h1>
-    <p class="muted">Halaman ini dilindungi route-guard — tamu otomatis dilempar ke halaman login.</p>
+    <p class="muted">Halaman ini dilindungi route-guard, tamu otomatis dilempar ke halaman login.</p>
     <p v-if="error" class="alert">{{ error }}</p>
     <p v-if="loading" class="muted">Memuat…</p>
     <section v-else class="panel">

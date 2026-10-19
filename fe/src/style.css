@@ -1,14 +1,15 @@
 /* ==========================================================================
-   Executive Liquidity Intelligence — design system
+   Executive Liquidity Intelligence: design system
    Sumber kebenaran: fe/Documentation/Laporan-Aset/DESIGN.md
    - Canvas #F8FAFC, primary navy #0A192F, secondary emerald #059669,
      tertiary slate #475569, risk crimson #DC2626
-   - Glass container Level 1: rgba(255,255,255,0.75) + blur(16px)
+   - Glass: hanya topbar sticky + tombol present (keputusan owner; dose cap
+     blur 1-2 elemen, R-10); kartu & panel permukaan solid
    - Display: Plus Jakarta Sans · Body/Data: Inter · angka: tabular-nums
    ========================================================================== */
 :root {
   /* Canvas & surfaces */
-  --bg: #f8fafc; /* Neutral — Crystalline Canvas */
+  --bg: #f8fafc; /* Neutral, Crystalline Canvas */
   --surface: #ffffff; /* surface-container-lowest (chrome) */
   --surface-2: #f2f4f6; /* surface-container-low */
   --surface-3: #eceef0; /* surface-container */
@@ -17,7 +18,7 @@
   /* Ink */
   --ink: #191c1e; /* on-surface */
   --text: #191c1e;
-  --muted: #475569; /* Tertiary slate — aman kontras (≥4.5:1) */
+  --muted: #475569; /* Tertiary slate, aman kontras (≥4.5:1) */
   --muted-2: #44474d; /* on-surface-variant */
 
   /* Brand */
@@ -25,16 +26,13 @@
   --primary-dark: #061021;
   --on-primary: #ffffff;
   --green: #059669; /* Emerald Growth */
-  --green-dark: #00714e; /* on-secondary-container — teks di tint emerald */
+  --green-dark: #00714e; /* on-secondary-container, teks di tint emerald */
   --green-bg: rgba(5, 150, 105, 0.12); /* Status Indicator chip */
   --red: #dc2626; /* Crimson Risk */
   --red-bg: rgba(220, 38, 38, 0.1); /* Adverse Variance chip */
   --amber: #b45309;
   --amber-bg: #fef3c7;
 
-  /* Glass containers (Level 1) */
-  --glass: rgba(255, 255, 255, 0.75);
-  --glass-hi: rgba(255, 255, 255, 0.9);
   --border: rgba(15, 23, 42, 0.08); /* structural separation */
   --border-strong: rgba(15, 23, 42, 0.12);
   --outline: #75777e;
@@ -75,7 +73,9 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
 /* ---- Shell: topbar + (sidebar | konten) ---- */
 .app { display: flex; flex-direction: column; min-height: 100vh; }
 
-/* Navbar putih full-width — Elevated glass (Level 2) + hairline bawah */
+/* Navbar putih full-width: elevated glass (Level 2) + hairline bawah.
+   Alasan blur di sini: bar sticky di atas konten bergulir, teks harus tetap
+   terbaca (R-10: satu dari maksimal 2 elemen ber-blur) */
 .topbar {
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(20px);
@@ -190,7 +190,7 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
   border-radius: var(--radius-pill); padding: 0.1rem 0.45rem;
 }
 
-/* CTA bawah sidebar — dark HUD navy */
+/* CTA bawah sidebar: dark HUD navy */
 .stage-broadcast {
   margin-top: auto;
   display: flex; align-items: center; justify-content: center; gap: 0.5rem;
@@ -204,50 +204,61 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
 .small { font-size: 0.85rem; }
 
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.main { padding: 2rem 2.5rem 3rem; max-width: 1240px; width: 100%; margin: 0 auto; }
+.main { padding: 1.25rem 2rem 1.5rem; max-width: 1240px; width: 100%; margin: 0 auto; }
 
 /* ---- Komponen umum ---- */
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.25rem; }
-.page-head h1 { margin: 0; font-size: 2rem; line-height: 2.5rem; letter-spacing: -0.015em; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 0.9rem; }
+.page-head h1 { margin: 0; font-size: 1.6rem; line-height: 2rem; letter-spacing: -0.015em; }
 .page-head p { margin: 0.3rem 0 0; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin: 0 0 1rem; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; margin: 0 0 0.75rem; }
+@media (max-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-/* Glass container Level 1 */
+/* Permukaan kartu/panel solid: alasan = hierarki permukaan (kartu bidang
+   konten di atas canvas; blur card dibuang per keputusan owner, R-10) */
 .card, .panel {
-  background: var(--glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-hi);
-  box-shadow: var(--shadow), inset 0 0 0 1px rgba(10, 25, 47, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
   border-radius: var(--radius-lg);
 }
 .card {
-  padding: 1rem 1.1rem;
-  display: flex; gap: 0.8rem; align-items: flex-start;
+  padding: 0.7rem 0.9rem;
+  display: flex; gap: 0.6rem; align-items: flex-start;
 }
 .card-ico {
-  width: 44px; height: 44px; border-radius: var(--radius); flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 1.3rem;
+  width: 38px; height: 38px; border-radius: var(--radius); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
 }
-.card-ico.blue { background: rgba(10, 25, 47, 0.08); }
-.card-ico.green { background: var(--green-bg); }
-.card-ico.amber { background: var(--amber-bg); }
-.card-ico.red { background: var(--red-bg); }
-.card-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.card-ico .ico-svg { width: 18px; height: 18px; }
+.card-ico.blue { background: rgba(10, 25, 47, 0.08); color: var(--primary); }
+.card-ico.green { background: var(--green-bg); color: var(--green-dark); }
+.card-ico.amber { background: var(--amber-bg); color: var(--amber); }
+.card-ico.red { background: var(--red-bg); color: var(--red); }
+.card-body { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.card .small { font-size: 0.76rem; }
 /* label-sm: 11px/600/uppercase/tracking 0.05em */
 .card .label, .metric .label {
   color: var(--muted); font-size: 0.69rem; font-weight: 600;
   letter-spacing: 0.05em; text-transform: uppercase;
 }
 .card strong {
-  font-family: var(--font-display); font-size: 1.35rem; font-weight: 700;
+  font-family: var(--font-display); font-size: 1.2rem; font-weight: 700;
   color: var(--primary); letter-spacing: -0.01em;
 }
+/* Kartu metrik laporan: stack label kecil, angka dominan, keterangan/chip.
+   Tanpa stripe kiri (dekoratif tanpa informasi, R-01) dan tanpa hover
+   (kartu bukan kontrol, hover imply klik = affordance palsu, R-26) */
+.card.metric {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+.card.metric strong { font-size: 1.7rem; line-height: 1.25; color: var(--ink); }
 .card .delta { font-size: 0.8rem; font-weight: 600; }
 .delta.up { color: var(--green-dark); }
 .delta.down { color: var(--red); }
 
-/* Metric callout — label uppercase + angka display besar */
+/* Metric callout: label uppercase + angka display besar */
 .metric { flex-direction: column; gap: 0.3rem; }
 .metric strong {
   font-family: var(--font-display); font-size: 2rem; line-height: 2.5rem;
@@ -258,7 +269,8 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
   font-weight: 600; color: var(--primary);
 }
 
-/* Status chip (pulse dot emerald / crimson) */
+/* Status chip (dot statis emerald / crimson; keputusan owner: tanpa pulse
+   loop, R-19 motion harus melayani tujuan, loop tanpa tujuan = noise) */
 .chip {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.22rem 0.6rem; border-radius: var(--radius);
@@ -266,25 +278,29 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
 }
 .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 .chip.up { background: var(--green-bg); color: var(--green-dark); }
-.chip.up .dot { background: var(--green); animation: pulse 2s ease-out infinite; }
+.chip.up .dot { background: var(--green); }
 .chip.down { background: var(--red-bg); color: var(--red); }
 .chip.down .dot { background: var(--red); }
 .chip.neutral { background: rgba(71, 85, 105, 0.08); color: var(--muted); }
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.35); }
-  70% { box-shadow: 0 0 0 6px rgba(5, 150, 105, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(5, 150, 105, 0); }
-}
-@media (prefers-reduced-motion: reduce) { .chip.up .dot { animation: none; } }
 
-.grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+.grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem; }
 @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
-.panel { padding: 1.25rem 1.4rem; margin: 0 0 1rem; }
-.panel h2 { margin: 0 0 0.25rem; font-size: 1.15rem; letter-spacing: -0.005em; }
-.panel .sub { margin: 0 0 1rem; font-size: 0.85rem; color: var(--muted); }
 
-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { text-align: left; padding: 0.65rem 0.6rem; border-bottom: 1px solid var(--border); }
+/* Dashboard: 4 kuadran sama tinggi agar muat 1 layar (target 1440x1000) */
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.dash-grid .panel { margin: 0; min-width: 0; }
+/* Konten dashboard tak perlu min-width 640 (lebar quadran cukup) */
+.dash-grid .table-scroll table { min-width: 0; }
+.dash-donut svg { max-width: 230px; margin: 0 auto; }
+.panel h3 { margin: 0.6rem 0 0.4rem; font-size: 0.9rem; }
+@media (max-width: 960px) { .dash-grid { grid-template-columns: 1fr; } }
+
+.panel { padding: 0.9rem 1.05rem; margin: 0 0 0.75rem; }
+.panel h2 { margin: 0 0 0.2rem; font-size: 1.05rem; letter-spacing: -0.005em; }
+.panel .sub { margin: 0 0 0.55rem; font-size: 0.82rem; color: var(--muted); }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th, td { text-align: left; padding: 0.42rem 0.55rem; border-bottom: 1px solid var(--border); }
 th {
   color: var(--muted); font-weight: 600; font-size: 0.72rem;
   text-transform: uppercase; letter-spacing: 0.05em;
@@ -329,7 +345,7 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
 }
 .btn-outline:hover { background: rgba(255, 255, 255, 0.9); box-shadow: var(--shadow); }
 
-/* Chart DOM bar — mengikuti code.html Section 1 (baseline + zoom scale 36–98%) */
+/* Chart DOM bar: mengikuti code.html Section 1 (baseline + zoom scale 36–98%) */
 .chart-dom { width: 100%; }
 .chart-stage {
   position: relative; height: 260px; margin-top: 1rem;
@@ -406,7 +422,7 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
 .chart-wrap svg { width: 100%; height: auto; display: block; }
 .chart-wrap rect[data-bar] { transition: opacity 0.15s ease; }
 .chart-wrap rect[data-bar]:hover { opacity: 0.75; }
-.chart-legend { display: flex; gap: 1rem; font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+.chart-legend { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
 
 /* Diagram komparasi antar BPRS (menu 2 Laporan Keuangan) */
 .chart-wrap.diag svg { margin-top: 1rem; }
@@ -432,18 +448,20 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
 .compare-chip:hover { border-color: var(--green); }
 .compare-chip.on { background: rgba(5, 150, 105, 0.10); border-color: var(--green); color: var(--text); font-weight: 600; }
 .compare-chip .swatch { flex: 0 0 auto; }
+.compare-chip:focus-visible,
+.compare-actions button:focus-visible,
+.side-link:focus-visible,
+.stage-broadcast:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 0.3rem; vertical-align: -1px; }
-.donut-list { list-style: none; padding: 0; margin: 0.75rem 0 0; font-size: 0.88rem; }
-.donut-list li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px dashed var(--border); }
+.donut-list { list-style: none; padding: 0; margin: 0.5rem 0 0; font-size: 0.84rem; }
+.donut-list li { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0; border-bottom: 1px dashed var(--border); }
 
 /* Login */
 .login-wrap { display: flex; justify-content: center; padding: 3rem 1rem; }
 .login-card {
-  background: var(--glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-hi);
-  box-shadow: var(--shadow), inset 0 0 0 1px rgba(10, 25, 47, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
   border-radius: var(--radius-lg);
   padding: 2rem; width: 100%; max-width: 380px;
   display: flex; flex-direction: column; gap: 0.9rem;
@@ -460,10 +478,8 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
   outline: none; border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.35);
 }
-.profit { list-style: none; padding: 0; margin: 0; }
-.profit li { padding: 0.4rem 0; border-bottom: 1px dashed var(--border); display: flex; justify-content: space-between; gap: 1rem; }
 
-/* Filter laporan — frosted input (doc: Input Fields & Selectors) */
+/* Filter laporan: input solid (doc: Input Fields & Selectors) */
 .filters { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-end; margin: 0; }
 .filters label {
   display: flex; flex-direction: column; gap: 0.35rem;
@@ -476,6 +492,17 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
   background: rgba(248, 250, 252, 0.8); color: var(--ink);
   font-family: var(--font-body); font-size: 0.9rem; min-width: 150px;
   text-transform: none; letter-spacing: normal; font-weight: 500;
+}
+/* Input filter (mis. date input laporan harian), gaya sama dgn select */
+.filters input {
+  padding: 0.55rem 0.65rem; border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: rgba(248, 250, 252, 0.8); color: var(--ink);
+  font-family: var(--font-body); font-size: 0.9rem; min-width: 150px;
+}
+.filters input:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.35);
 }
 .filters select:focus {
   outline: none; border-color: var(--primary);
@@ -504,7 +531,7 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.6); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-end; justify-content: space-between; }
 
 /* ==========================================================================
-   PRESENT MODE — fullscreen slideshow
+   PRESENT MODE: fullscreen slideshow
    Chrome (topbar/sidebar) disembunyikan, konten selebar layar. Kalau
    Fullscreen API ditolak, class ini tetap membuat tampilan rapi (fallback).
    ========================================================================== */
@@ -515,7 +542,9 @@ body.present-mode .side-backdrop { display: none !important; }
 body.present-mode .shell { min-height: 100vh; }
 body.present-mode .main { max-width: 1600px; padding-top: 1.75rem; }
 
-/* Tombol keluar present — mengambang di pojok kanan atas */
+/* Tombol keluar present: mengambang di pojok kanan atas.
+   Blur di sini alasan: tombol melayang di atas chart padat, kontras teks
+   putih harus terjaga (elemen ber-blur ke-2 dan terakhir, R-10) */
 .present-exit {
   position: fixed; top: 14px; right: 16px; z-index: 60;
   display: inline-flex; align-items: center; gap: 0.45rem;
@@ -534,7 +563,7 @@ body.present-mode .main { max-width: 1600px; padding-top: 1.75rem; }
    ========================================================================== */
 .top-left { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
 
-/* Hamburger — tampil hanya ≤860px */
+/* Hamburger: tampil hanya ≤860px */
 .side-toggle {
   display: none; align-items: center; justify-content: center;
   width: 40px; height: 40px; padding: 0; flex-shrink: 0;
@@ -547,7 +576,25 @@ body.present-mode .main { max-width: 1600px; padding-top: 1.75rem; }
   background: rgba(6, 16, 33, 0.45); z-index: 15;
 }
 
-/* Tabel lebar → gulir horizontal di dalam wrapper, halaman TIDAK ikut melebar */
+/* Tombol "More details": buka/tutup tabel data terperinci di bawah grafik */
+.details-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.42rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2); color: var(--ink);
+  font-family: var(--font-body); font-size: 0.82rem; font-weight: 600;
+  cursor: pointer;
+}
+.details-btn:hover { color: var(--primary); border-color: var(--primary); }
+.details-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+/* Chevron muter 90deg saat terbuka: satu-satunya transisi (melayani state) */
+.details-btn .chev { transition: transform 0.18s ease; }
+.details-btn.open .chev { transform: rotate(90deg); }
+.details-body { margin-top: 0.7rem; }
+
+/* Tabel lebar -> gulir horizontal di dalam wrapper, halaman TIDAK ikut melebar */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll table { min-width: 640px; }
 
@@ -580,13 +627,13 @@ body.present-mode .main { max-width: 1600px; padding-top: 1.75rem; }
 
   .page-head h1 { font-size: 1.5rem; line-height: 2rem; }
   .panel { padding: 1rem 0.9rem; }
-  .card.metric strong { font-size: 1.45rem; }
+  .card.metric strong { font-size: 1.5rem; }
 
   /* 16px cegah zoom-otomatis iOS saat fokus input/select */
-  .filters select, .login-card input { font-size: 16px; }
+  .filters select, .filters input, .login-card input { font-size: 16px; }
   .filters select { min-width: 120px; }
   .segmented button { padding: 0.4rem 0.7rem; }
 
-  /* Label sumbu-X bar DOM terlalu padat di layar sempit — sisakan bar terakhir */
+  /* Label sumbu-X bar DOM terlalu padat di layar sempit, sisakan bar terakhir */
   .bar-col:not(.last) .bar-x { display: none; }
 }
