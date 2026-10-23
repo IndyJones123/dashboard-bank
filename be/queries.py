@@ -532,16 +532,14 @@ def _series(kdloc: str, base: float, grow: float, thn: str, ket: str) -> list[di
     }]
     for m in range(1, 13):
         v = int((base + grow * m) * w)
-        row: dict[str, Any] = {
+        # Bentuk baris = hasil query ASLI pasca-CASE: kolom hasil selalu 'tgl31'
+        # (UNION pertama SELECT tgl31 → nama kolom hasil). Bulan 28/29/30 hari
+        # sudah dipilih CASE di SQL; mock taruh v langsung di tgl31 — kalau
+        # ditulis di tgl28/tgl29, _norm_saldo_series cuma baca tgl31 → Feb=0.
+        rows.append({
             "ket": ket, "kdloc": kdloc, "thn": thn, "bln": f"{m:02d}",
-            "tgl31": 0, "tgl28": 0, "tgl29": 0, "tgl30": 0,
-        }
-        # Feb pakai tgl28/29 (kabisat) — sisanya tgl31 (pola query asli)
-        if m == 2:
-            row["tgl28" if y % 4 != 0 or (y % 100 == 0 and y % 400 != 0) else "tgl29"] = v
-        else:
-            row["tgl31"] = v
-        rows.append(row)
+            "tgl31": v, "tgl28": 0, "tgl29": 0, "tgl30": 0,
+        })
     return rows
 
 

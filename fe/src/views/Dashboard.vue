@@ -253,8 +253,9 @@ onMounted(async () => {
                 {{ (maxFlow * (4 - g) / 4 / 1e9).toFixed(0) }}M
               </text>
             </g>
-            <g v-for="b in flowBars" :key="b.bulan">
+            <g v-for="(b, bi) in flowBars" :key="b.bulan" :style="{ '--i': bi }">
               <rect
+                class="svg-bar"
                 :x="b.xSetor" :width="26"
                 :y="b.ySetor" :height="160 - b.ySetor"
                 rx="4" fill="#059669"
@@ -262,6 +263,7 @@ onMounted(async () => {
                 <title>Setor {{ b.bulan }}: {{ formatRupiah(b.setor) }}</title>
               </rect>
               <rect
+                class="svg-bar"
                 :x="b.xTarik" :width="26"
                 :y="b.yTarik" :height="160 - b.yTarik"
                 rx="4" fill="#0a192f"
@@ -269,9 +271,9 @@ onMounted(async () => {
                 <title>Tarik {{ b.bulan }}: {{ formatRupiah(b.tarik) }}</title>
               </rect>
               <!-- Nilai terlihat di atas tiap batang (tanpa hover) -->
-              <text :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#047857">{{ b.vSetor }}</text>
-              <text :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0a192f">{{ b.vTarik }}</text>
-              <text :x="b.xSetor + 27" y="175" text-anchor="middle" font-size="11" fill="#475569">
+              <text class="svg-bar-val" :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#047857">{{ b.vSetor }}</text>
+              <text class="svg-bar-val" :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0a192f">{{ b.vTarik }}</text>
+              <text class="svg-bar-x" :x="b.xSetor + 27" y="175" text-anchor="middle" font-size="11" fill="#475569">
                 {{ b.label }}
               </text>
             </g>
@@ -293,14 +295,18 @@ onMounted(async () => {
           <svg viewBox="0 0 200 116" role="img" aria-label="Donat komposisi dana">
             <circle cx="100" cy="54" r="44" fill="none" stroke="rgba(10,25,47,0.10)" stroke-width="18" />
             <circle
+              class="donut-arc donut-arc-setor"
               cx="100" cy="54" r="44" fill="none" stroke="#059669" stroke-width="18"
               :stroke-dasharray="`${donutSegs.setorLen} ${donutSegs.C}`"
+              :style="{ '--seg': donutSegs.setorLen }"
               transform="rotate(-90 100 54)" stroke-linecap="round"
             />
             <circle
+              class="donut-arc donut-arc-tarik"
               cx="100" cy="54" r="44" fill="none" stroke="#0a192f" stroke-width="18"
               :stroke-dasharray="`${donutSegs.tarikLen} ${donutSegs.C}`"
               :stroke-dashoffset="donutSegs.tarikOff"
+              :style="{ '--seg': donutSegs.tarikLen, '--C': donutSegs.C }"
               transform="rotate(-90 100 54)" stroke-linecap="round"
             />
             <text x="100" y="51" text-anchor="middle" font-size="15" font-weight="800" fill="#191c1e">
@@ -363,12 +369,12 @@ onMounted(async () => {
         <div v-if="labaBars" class="chart-wrap">
           <svg viewBox="0 0 480 120" role="img" aria-label="Diagram batang laba rugi per bulan">
             <line x1="16" :y1="labaBars.yZero" x2="464" :y2="labaBars.yZero" stroke="rgba(10,25,47,0.35)" stroke-width="1" />
-            <g v-for="b in labaBars.rows" :key="b.bulan">
-              <rect :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3" :fill="b.neg ? '#dc2626' : '#059669'">
+            <g v-for="(b, bi) in labaBars.rows" :key="b.bulan" :style="{ '--i': bi }">
+              <rect class="svg-bar" :class="{ neg: b.neg }" :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3" :fill="b.neg ? '#dc2626' : '#059669'">
                 <title>{{ b.label }}: {{ formatRupiah(b.val) }}{{ b.neg ? ' (rugi)' : '' }}</title>
               </rect>
-              <text :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="9.5" font-weight="700" :fill="b.neg ? '#b91c1c' : '#047857'">{{ b.lab }}</text>
-              <text :x="b.cx" y="112" text-anchor="middle" font-size="10" fill="#475569">{{ b.label }}</text>
+              <text class="svg-bar-val" :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="9.5" font-weight="700" :fill="b.neg ? '#b91c1c' : '#047857'">{{ b.lab }}</text>
+              <text class="svg-bar-x" :x="b.cx" y="112" text-anchor="middle" font-size="10" fill="#475569">{{ b.label }}</text>
             </g>
           </svg>
         </div>

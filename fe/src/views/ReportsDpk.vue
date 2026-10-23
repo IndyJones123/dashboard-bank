@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import api, { formatRupiah } from '../api'
-import { apiErrText, formatRpSingkat, kantorColor, shortMonth } from '../report-helpers'
+import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
 import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
+import KantorPicker from './KantorPicker.vue'
+import DetailTable, { type DetailCol } from './DetailTable.vue'
 
 /* ==========================================================================
    LAPORAN DPK: /api/laporan/dpk (Laporan-Keuangan-DPK.sql)
-   Tampilan DIAGRAM GARIS (bukan tabel): 1 chart berisi DPK Tabungan + DPK
-   Deposito. WARNA = kantor (kalau >1 kantor), garis putus-putus = Deposito.
+   Tampilan DIAGRAM GARIS: 2 chart TERPISAH — DPK Tabungan & DPK Deposito
+   (jangan digabung), masing-masing dgn tabel terperinci sendiri (paginated,
+   1 baris/kolom + gulir horizontal). WARNA = kantor.
    Kunci sel: ket|kdloc|thn-bln.
    ========================================================================== */
 
@@ -26,13 +29,16 @@ const tahun = ref(String(new Date().getFullYear() - 1))
     data (min. opsi ter tua) supaya grafik + tabel detail langsung tampil;
     pilihan tahun user setelah itu dihormati (tanpa fallback). */
 const TAHUN_MIN = String(new Date().getFullYear() - 4)
-const kdloc = ref('00')
-const offices = ref<string[]>(['00'])
 const rows = ref<DpkRow[]>([])
 const loading = ref(true)
 const error = ref('')
-/** Tabel terperinci default tersembunyi; dibuka via tombol More details. */
-const detOpen = ref(false)
+/** Tabel terperinci per chart disembunyikan default; dibuka via More details. */
+const detOpen = ref<Record<string, boolean>>({})
+const toggleDet = (id: string) => {
+  detOpen.value[id] = !detOpen.value[id]
+}
+/** Kantor yang disembunyikan dari grafik & total (filter tampilan saja). */
+const hidden = ref<string[]>([])
 
 /** ['12' (Des thn lalu), '01'..'12'], urutan periode sumbu X. */
 const periodKeys = computed(() => {
@@ -47,15 +53,19 @@ const periodKeys = computed(() => {
   ]
 })
 
-/** cellKey = ket|kdloc|thn-bln -> saldo (pivot sekali utk lookup O(1)). */
+/** cellKey = ket|kdloc|thn-bln -> saldo (pivot sekali utk lookup O(1)). Kantor tersembunyi dikecualikan. */
 const cells = computed(() => {
   const m = new Map<string, number>()
-  for (const r of rows.value) m.set(`${r.ket}|${r.kdloc}|${r.thn}-${r.bln}`, r.saldo)
+  for (const r of rows.value) {
+    if (hidden.value.includes(r.kdloc)) continue
+    m.set(`${r.ket}|${r.kdloc}|${r.thn}-${r.bln}`, r.saldo)
+  }
   return m
 })
 
 const KET_ORDER = ['DPK Tabungan', 'DPK Deposito']
 const kantors = computed(() => [...new Set(rows.value.map((r) => r.kdloc))].sort())
+const visibleKantors = computed(() => kantors.value.filter((k) => !hidden.value.includes(k)))
 const kets = computed(() => {
   const seen = [...new Set(rows.value.map((r) => r.ket))]
   return seen.sort(
@@ -70,39 +80,49 @@ const kLabel = (k: string): string => (k === '00' ? 'Semua Kantor' : `Kantor ${k
 const val = (ket: string, k: string, key: string): number | null =>
   cells.value.get(`${ket}|${k}|${key}`) ?? null
 
-/** Baris tabel terperinci: 1 baris per (kantor × produk) × kolom periode. */
-const detailRows = computed(() =>
-  kantors.value.flatMap((k) =>
-    kets.value.map((ket) => ({
-      id: `${k}|${ket}`,
-      label: kLabel(k),
-      ket,
-      cells: periodKeys.value.map((p) => val(ket, k, p.key)),
-    })),
-  ),
-)
-
 const hasData = computed(() => cells.value.size > 0)
 
-/** 1 garis per (kantor × produk): warna = kantor, dash = Deposito. */
-const series = computed<LineSerie[]>(() =>
-  kantors.value.flatMap((k) =>
+/** Kolom tabel terperinci per chart: Kantor + kolom periode (angka rata kanan). */
+const tableCols = computed<DetailCol[]>(() => [
+  { key: 'label', label: 'Kantor' },
+  ...periodKeys.value.map((p) => ({ key: p.key, label: p.label, right: true })),
+])
+
+/** Satu entri chart per produk (Tabungan, Deposito) — TIDAK digabung jadi 1 chart. */
+const charts = computed<{ ket: string; id: string; short: string; series: LineSerie[] }[]>(
+  () =>
     kets.value.map((ket) => ({
-      key: `${ket}|${k}`,
-      label: `${kLabel(k)} · ${ket.replace(/^DPK\s+/i, '')}`,
-      color: kColor(k),
-      dash: /depos/i.test(ket) ? '7 5' : undefined,
-      values: periodKeys.value.map((p) => val(ket, k, p.key)),
+      ket,
+      id: `dpk-${ket.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      short: ket.replace(/^DPK\s+/i, ''),
+      series: visibleKantors.value.map((k) => ({
+        key: `${ket}|${k}`,
+        label: kLabel(k),
+        color: kColor(k),
+        values: periodKeys.value.map((p) => val(ket, k, p.key)),
+      })),
     })),
-  ),
 )
 
-/** Bulan & label terakhir dgn data di tahun terpilih (DB bisa parsial,
-    mis. 2024 s.d. Mei) — kartu tidak boleh 0 padahal grafik ada isinya. */
+/** Baris tabel per chart: 1 baris per kantor, kolom = periode (paginated DetailTable).
+    Fungsi biasa (bukan computed) — dipanggil saat render, dependensi tetap ter-track. */
+const tableRows = (ket: string) =>
+  visibleKantors.value.map((k) => ({
+    id: k,
+    label: kLabel(k),
+    ...Object.fromEntries(periodKeys.value.map((p) => [p.key, val(ket, k, p.key)])),
+  }))
+
+/** Bulan & label terakhir dgn data (DB bisa parsial, mis. 2024 s.d. Mei) —
+    kartu tidak boleh 0 padahal grafik ada isinya. 'Punya data' = saldo > 0:
+    baris bln depan di snapshot parsial balik saldo 0 — existence saja bikin
+    kartu lompat ke Des berisi Rp 0. */
 const lastBln = computed<string>(
   () =>
     periodKeys.value
-      .filter((p) => !p.carry && rows.value.some((r) => `${r.thn}-${r.bln}` === p.key))
+      .filter(
+        (p) => !p.carry && rows.value.some((r) => `${r.thn}-${r.bln}` === p.key && r.saldo > 0),
+      )
       .at(-1)?.key.split('-')[1] ?? '12',
 )
 const lastLabel = computed(
@@ -114,21 +134,12 @@ const lastLabel = computed(
 const sumDes = (ket?: string): number =>
   rows.value.reduce(
     (s, r) =>
-      (r.thn === tahun.value && r.bln === lastBln.value && (!ket || r.ket === ket) ? s + r.saldo : s),
+      (r.thn === tahun.value && r.bln === lastBln.value && !hidden.value.includes(r.kdloc) && (!ket || r.ket === ket) ? s + r.saldo : s),
     0,
   )
 const pctOf = (ket: string): string => {
   const total = sumDes()
   return total ? `${((sumDes(ket) / total) * 100).toFixed(1)}% dari total DPK` : '–'
-}
-
-async function loadOffices(): Promise<void> {
-  try {
-    const { data } = await api.get<{ kdloc: string }[]>('/api/gl/offices')
-    offices.value = ['00', ...data.map((o) => String(o.kdloc))]
-  } catch {
-    offices.value = ['00']
-  }
 }
 
 async function load(first = false): Promise<void> {
@@ -137,7 +148,7 @@ async function load(first = false): Promise<void> {
   try {
     for (;;) {
       const { data } = await api.get<{ rows: DpkRow[] }>('/api/laporan/dpk', {
-        params: { tahun: tahun.value, kdloc: kdloc.value },
+        params: { tahun: tahun.value, kdloc: '00' },
       })
       rows.value = data.rows ?? []
       if (!first || rows.value.length || Number(tahun.value) <= Number(TAHUN_MIN)) break
@@ -152,7 +163,6 @@ async function load(first = false): Promise<void> {
 }
 
 onMounted(() => {
-  void loadOffices()
   void load(true)
 })
 </script>
@@ -170,13 +180,7 @@ onMounted(() => {
               </option>
             </select>
           </label>
-          <label>
-            Kantor
-            <select v-model="kdloc" @change="load()">
-              <option value="00">Semua Kantor</option>
-              <option v-for="o in offices.filter((v) => v !== '00')" :key="o" :value="o">Kantor {{ o }}</option>
-            </select>
-          </label>
+          <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
         </div>
         <span v-if="loading" class="muted small">Memuat…</span>
       </div>
@@ -203,49 +207,44 @@ onMounted(() => {
     <section class="panel">
       <h2>Laporan DPK: {{ tahun }}</h2>
       <p class="sub">
-        DPK Tabungan &amp; Deposito dalam satu diagram · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
+        Satu diagram per produk (Tabungan &amp; Deposito terpisah) · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
       </p>
       <p v-if="loading" class="muted">Memuat laporan DPK…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
       <p v-else-if="!hasData" class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
       <template v-else>
-        <LineChart
-          :labels="periodKeys.map((p) => p.label)"
-          :series="series"
-          aria-label="Grafik garis DPK tabungan dan deposito per kantor"
-        />
-        <p class="muted small note">
-          Hover titik utk nilai rupiah · warna = kantor, garis putus-putus = DPK Deposito ·
-          titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
-        </p>
-        <MoreDetails id="det-dpk" :open="detOpen" @toggle="detOpen = !detOpen">
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Kantor</th>
-                  <th>Uraian</th>
-                  <th v-for="p in periodKeys" :key="p.key" class="ta-r">{{ p.label }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="d in detailRows" :key="d.id">
-                  <td>{{ d.label }}</td>
-                  <td>{{ d.ket }}</td>
-                  <td v-for="(c, i) in d.cells" :key="i" class="ta-r num"
-                      :title="c == null ? undefined : formatRupiah(c)">{{ c == null ? '–' : formatRpSingkat(c) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </MoreDetails>
+        <div v-for="c in charts" :key="c.ket" class="chart-block">
+          <h3 class="chart-title">DPK {{ c.short }}</h3>
+          <LineChart
+            :labels="periodKeys.map((p) => p.label)"
+            :series="c.series"
+            :aria-label="`Grafik garis DPK ${c.short.toLowerCase()} per kantor`"
+          />
+          <p class="note">
+            Hover titik utk nilai rupiah · warna = kantor ·
+            titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
+          </p>
+          <MoreDetails :id="`det-${c.id}`" :open="!!detOpen[c.id]" @toggle="toggleDet(c.id)">
+            <DetailTable :cols="tableCols" :rows="tableRows(c.ket)" :per-page="10" />
+          </MoreDetails>
+        </div>
       </template>
     </section>
   </div>
 </template>
 
 <style scoped>
-.note {
-  margin-top: 0.75rem;
+/* Pemisah antar chart produk (Tabungan vs Deposito). */
+.chart-block + .chart-block {
+  margin-top: 1.6rem;
+  padding-top: 1.2rem;
+  border-top: 1px dashed var(--border);
+}
+.chart-title {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  color: var(--primary);
+  margin: 0 0 0.45rem;
 }
 </style>
+

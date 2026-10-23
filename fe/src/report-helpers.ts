@@ -22,6 +22,18 @@ export function recentYears(n = 4): string[] {
   return Array.from({ length: n }, (_, i) => String(y - i)).reverse()
 }
 
+/** Jenis laporan keuangan, urut spt dropdown & urutan slide Present Mode. */
+export const REPORT_KINDS = ['aset', 'labarugi', 'harian', 'dpk', 'piutang'] as const
+
+/** Label tiap jenis laporan (dipakai Reports.vue & deck slide Present Mode). */
+export const REPORT_KIND_LABELS: Record<string, string> = {
+  aset: 'Laporan Aset',
+  labarugi: 'Laporan Laba Rugi',
+  harian: 'Laporan Keuangan Harian',
+  dpk: 'Laporan DPK',
+  piutang: 'Laporan Piutang',
+}
+
 /** Palet warna kantor utk chart, cukup kontras di kedua tema (bukan text-500). */
 export const KANTOR_PALETTE = [
   '#0a192f', '#2563eb', '#059669', '#b45309', '#7c3aed',

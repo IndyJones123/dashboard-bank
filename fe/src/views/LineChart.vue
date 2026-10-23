@@ -9,7 +9,7 @@ export interface LineSerie {
 </script>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, useId, watch } from 'vue'
 import { formatRupiah } from '../api'
 
 /* ==========================================================================
@@ -27,6 +27,13 @@ const props = defineProps<{
 }>()
 
 const W = 1040, H = 276, PADL = 56, PADR = 16, TOP = 16, BASE = 226
+
+/* Animasi gambar garis: clipPath kiri -> kanan (dari awal ke akhir bulan)
+   saat data tampil. defs di-key agar re-mount saat data berganti -> animasi
+   main ulang. ID unik per instans (banyak chart per halaman). */
+const uid = useId()
+const drawKey = ref(0)
+watch(() => [props.labels, props.series], () => { drawKey.value += 1 })
 
 const maxVal = computed(() => {
   let m = 0
@@ -46,9 +53,11 @@ const fmtAxis = (v: number): string => {
 const ticks = computed(() => {
   const mx = maxVal.value
   const plotH = BASE - TOP
+  // g=0 = garis dasar (bawah) -> label 0; g=4 (atas) -> label maks.
+  // (Dulu kebalik: dasar dilabeli maks, puncak dilabeli 0.)
   return [0, 1, 2, 3, 4].map((g) => ({
     y: BASE - (g * plotH) / 4,
-    label: fmtAxis((mx * (4 - g)) / 4),
+    label: fmtAxis((mx * g) / 4),
   }))
 })
 
@@ -87,11 +96,25 @@ const drawn = computed<Drawn[]>(() =>
     <div class="chart-scroll">
       <div class="chart-wrap lc" :style="{ width: `max(100%, ${W}px)` }">
         <svg :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="aria ?? 'Grafik garis laporan'">
+          <!-- Clip animasi draw (kiri -> kanan); key = drawKey -> main ulang saat data ganti -->
+          <defs :key="drawKey">
+            <clipPath :id="`lcdraw-${uid}`" clipPathUnits="userSpaceOnUse">
+              <rect
+                class="lc-clip-rect"
+                x="0" y="0" :width="W" :height="H"
+                :style="{ '--lc-w': `${W}px` }"
+              />
+            </clipPath>
+          </defs>
           <g v-for="t in ticks" :key="t.y">
             <line :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
             <text :x="PADL - 8" :y="t.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ t.label }}</text>
           </g>
-          <g v-for="(s, si) in series" :key="s.key">
+          <g
+            v-for="(s, si) in series"
+            :key="s.key"
+            :clip-path="`url(#lcdraw-${uid})`"
+          >
             <polyline
               v-for="(seg, gi) in drawn[si]?.segs ?? []"
               :key="gi"
@@ -127,13 +150,14 @@ const drawn = computed<Drawn[]>(() =>
         </svg>
       </div>
     </div>
-    <div class="chart-legend lc-legend">
-      <span v-for="s in series" :key="s.key">
+    <ul class="lc-legend">
+      <li v-for="s in series" :key="s.key">
         <svg class="lc-key" width="20" height="8" aria-hidden="true">
           <line x1="0" y1="4" x2="20" y2="4" :stroke="s.color" stroke-width="2.5" :stroke-dasharray="s.dash" />
-        </svg>{{ s.label }}
-      </span>
-    </div>
+        </svg>
+        {{ s.label }}
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -141,12 +165,38 @@ const drawn = computed<Drawn[]>(() =>
 .chart-scroll {
   overflow-x: auto;
 }
+/* Animasi draw garis: clip rect melebar 0 -> lebar plot (kiri ke kanan,
+   Jan -> Des). Jika browser tak dukung animasi width, rect tetap W (attribute
+   default) -> chart tampil penuh tanpa animasi (gagal aman). */
+.lc-clip-rect {
+  animation: lc-draw 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes lc-draw {
+  from { width: 0; }
+  to { width: var(--lc-w); }
+}
 .lc-key {
   flex: 0 0 auto;
 }
-.lc-legend span {
+/* Legend = chip berbingkai (bukan teks mentah). */
+.lc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+}
+.lc-legend li {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 500;
 }
 </style>

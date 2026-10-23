@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import api, { formatRupiah } from '../api'
-import { apiErrText, formatRpSingkat, kantorColor, shortMonth } from '../report-helpers'
+import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
 import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
+import KantorPicker from './KantorPicker.vue'
+import DetailTable, { type DetailCol } from './DetailTable.vue'
 
 /* ==========================================================================
    LAPORAN PIUTANG: /api/laporan/piutang (Laporan-Keuangan-Piutang.sql)
-   Tampilan DIAGRAM GARIS (bukan tabel), 1 chart: total piutang + rincian
-   per golongan akun (kolom golac TBLGL). WARNA = kantor, dash = golongan.
+   Tampilan DIAGRAM GARIS: 3 chart TERPISAH — Total Piutang + rincian per
+   golongan akun (kolom golac TBLGL), masing-masing dgn tabel terperinci
+   sendiri (paginated, 1 baris/kolom + gulir horizontal). WARNA = kantor.
    ========================================================================== */
 
 interface PiutangRow {
@@ -26,14 +29,17 @@ const tahun = ref(String(new Date().getFullYear() - 1))
     data (min. opsi ter tua) supaya grafik + tabel detail langsung tampil;
     pilihan tahun user setelah itu dihormati (tanpa fallback). */
 const TAHUN_MIN = String(new Date().getFullYear() - 4)
-const kdloc = ref('00')
-const offices = ref<string[]>(['00'])
 const rows = ref<PiutangRow[]>([])
 const golacRows = ref<PiutangRow[]>([])
 const loading = ref(true)
 const error = ref('')
-/** Tabel terperinci default tersembunyi; dibuka via tombol More details. */
-const detOpen = ref(false)
+/** Tabel terperinci per chart disembunyikan default; dibuka via More details. */
+const detOpen = ref<Record<string, boolean>>({})
+const toggleDet = (id: string) => {
+  detOpen.value[id] = !detOpen.value[id]
+}
+/** Kantor yang disembunyikan dari grafik & total (filter tampilan saja). */
+const hidden = ref<string[]>([])
 
 const periodKeys = computed(() => {
   const prev = String(Number(tahun.value) - 1)
@@ -68,57 +74,85 @@ function pivot(src: PiutangRow[], groupOf: (r: PiutangRow) => string, labelOf: (
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
 
-const mainPivot = computed(() =>
-  pivot(rows.value, () => 'piutang', () => 'Piutang'),
-)
-const golacPivot = computed(() =>
-  pivot(golacRows.value, (r) => `golac-${r.golac ?? '-'}`, (r) => `Golongan ${r.golac ?? '-'}`),
-)
 const kantors = computed(() =>
   [...new Set([...rows.value, ...golacRows.value].map((r) => r.kdloc))].sort(),
+)
+const shown = (r: PiutangRow): boolean => !hidden.value.includes(r.kdloc)
+const mainPivot = computed(() =>
+  pivot(rows.value.filter(shown), () => 'piutang', () => 'Piutang'),
+)
+const golacPivot = computed(() =>
+  pivot(golacRows.value.filter(shown), (r) => `golac-${r.golac ?? '-'}`, (r) => `Golongan ${r.golac ?? '-'}`),
 )
 const kColor = (k: string): string => kantorColor(k, kantors.value)
 const kLabel = (k: string): string => (k === '00' ? 'Semua Kantor' : `Kantor ${k}`)
 
-/** Garis: solid = total, dash = golongan. Id golongan DARI DATA (golac bisa
-    berubah, contoh sekarang golongan 1 + 6) — jangan hardcode. */
-const GROUPS = computed(() => [
-  { id: 'piutang', label: 'Total Piutang', dash: undefined as string | undefined },
-  ...[...new Set(golacPivot.value.map((p) => p.id.split('|')[0]))]
-    .sort()
-    .map(
-      (id, i): { id: string; label: string; dash: string } => ({
-        id,
-        label: `Golongan ${id.replace('golac-', '')}`,
-        dash: ['7 5', '2 4'][i % 2],
-      }),
-    ),
+/** 3 chart TERPISAH: Total Piutang + 1 per golongan akun. Id golongan DARI
+    DATA (golac bisa berubah, jangan hardcode) — diurutkan, jadi selalu
+    urutan Total, Golongan 1, Golongan 2, dst. */
+const golIds = computed(() =>
+  [...new Set(golacPivot.value.map((p) => p.id.split('|')[0]))].sort(),
+)
+const chartDefs = computed<{ id: string; label: string }[]>(() => [
+  { id: 'piutang', label: 'Total Piutang' },
+  ...golIds.value.map((id) => ({ id, label: `Golongan ${id.replace('golac-', '')}` })),
 ])
 
-const series = computed<LineSerie[]>(() => {
+/** Garis per chart: 1 garis per kantor (warna = kantor; tanpa dash — chart sudah terpisah). */
+const seriesOf = (chartId: string): LineSerie[] => {
   const all = [...mainPivot.value, ...golacPivot.value]
-  return kantors.value.flatMap((k) =>
-    GROUPS.value.map((g): LineSerie | null => {
-      const row = all.find((p) => p.id === `${g.id}|${k}`)
-      if (!row) return null
-      return {
-        key: `${g.id}|${k}`,
-        label: `${kLabel(k)} · ${g.label}`,
+  return kantors.value.flatMap((k): LineSerie[] => {
+    const row = all.find((p) => p.id === `${chartId}|${k}`)
+    if (!row) return []
+    return [
+      {
+        key: `${chartId}|${k}`,
+        label: kLabel(k),
         color: kColor(k),
-        dash: g.dash,
         values: periodKeys.value.map((p) => row.cells[p.key] ?? null),
-      }
-    }),
-  ).filter((s): s is LineSerie => s != null)
-})
+      },
+    ]
+  })
+}
 
-/** Periode kartu: bulan TERAKHIR dgn data di tahun terpilih (DB bisa parsial,
-    mis. 2024 s.d. Mei) — Des hanya bila tahun penuh. Tanpa ini kartu "Posisi
-    Des 2024" = 0 dan pertumbuhan jadi -100% padahal grafik ada isinya. */
+/** Baris tabel terperinci per chart: 1 baris per kantor, kolom = periode
+    (paginated DetailTable). Fungsi biasa (bukan computed) — dipanggil saat
+    render, dependensi tetap ter-track. */
+const tableRows = (chartId: string): Record<string, unknown>[] => {
+  const src =
+    chartId === 'piutang'
+      ? mainPivot.value
+      : golacPivot.value.filter((p) => p.id.startsWith(`${chartId}|`))
+  return src.map((p) => {
+    const [, k] = p.id.split('|')
+    return {
+      id: p.id,
+      label: kLabel(k ?? '00'),
+      ...Object.fromEntries(periodKeys.value.map((pr) => [pr.key, p.cells[pr.key] ?? null])),
+    }
+  })
+}
+
+/** Kolom tabel terperinci: Kantor + kolom periode (angka rata kanan). */
+const tableCols = computed<DetailCol[]>(() => [
+  { key: 'label', label: 'Kantor' },
+  ...periodKeys.value.map((p) => ({ key: p.key, label: p.label, right: true })),
+])
+
+/** Satu entri per chart (defs + garis + baris tabel) utk loop template:
+    Total Piutang, Golongan 1, Golongan 2 — masing-masing chart + tabel sendiri. */
+const chartData = computed(() =>
+  chartDefs.value.map((c) => ({ ...c, series: seriesOf(c.id), rows: tableRows(c.id) })),
+)
+const hasChart = computed(() => chartData.value.some((c) => c.series.length > 0))
+
+/** Periode kartu: bulan TERAKHIR dgn data (saldo > 0; baris bln depan di
+    snapshot parsial balik 0 — existence saja bikin kartu "Posisi Des" = 0
+    dan pertumbuhan -100% padahal grafik ada isinya). */
 const lastKey = computed<string>(
   () =>
     periodKeys.value
-      .filter((p) => !p.carry && rows.value.some((r) => `${r.thn}-${r.bln}` === p.key))
+      .filter((p) => !p.carry && rows.value.some((r) => `${r.thn}-${r.bln}` === p.key && r.saldo > 0))
       .at(-1)?.key ?? `${tahun.value}-12`,
 )
 const lastLabel = computed(
@@ -135,35 +169,13 @@ const growthPct = computed<number | null>(() => {
   if (!totalAwal.value || !totalAkhir.value) return null
   return ((totalAkhir.value - totalAwal.value) / totalAwal.value) * 100
 })
-/** Baris tabel terperinci: 1 baris per (grup akun × kantor) × kolom periode. */
-const detailRows = computed(() =>
-  [...mainPivot.value, ...golacPivot.value].map((p) => {
-    const [, k] = p.id.split('|')
-    return {
-      id: p.id,
-      label: p.label,
-      kLabel: kLabel(k ?? '00'),
-      cells: periodKeys.value.map((pr) => p.cells[pr.key] ?? null),
-    }
-  }),
-)
-
-async function loadOffices(): Promise<void> {
-  try {
-    const { data } = await api.get<{ kdloc: string }[]>('/api/gl/offices')
-    offices.value = ['00', ...data.map((o) => String(o.kdloc))]
-  } catch {
-    offices.value = ['00']
-  }
-}
-
 async function load(first = false): Promise<void> {
   loading.value = true
   error.value = ''
   try {
     for (;;) {
       const { data } = await api.get<{ rows: PiutangRow[]; golac: PiutangRow[] }>('/api/laporan/piutang', {
-        params: { tahun: tahun.value, kdloc: kdloc.value },
+        params: { tahun: tahun.value, kdloc: '00' },
       })
       rows.value = data.rows ?? []
       golacRows.value = data.golac ?? []
@@ -181,7 +193,6 @@ async function load(first = false): Promise<void> {
 }
 
 onMounted(() => {
-  void loadOffices()
   void load(true)
 })
 </script>
@@ -199,13 +210,7 @@ onMounted(() => {
               </option>
             </select>
           </label>
-          <label>
-            Kantor
-            <select v-model="kdloc" @change="load()">
-              <option value="00">Semua Kantor</option>
-              <option v-for="o in offices.filter((v) => v !== '00')" :key="o" :value="o">Kantor {{ o }}</option>
-            </select>
-          </label>
+          <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
         </div>
         <span v-if="loading" class="muted small">Memuat…</span>
       </div>
@@ -239,49 +244,44 @@ onMounted(() => {
     <section class="panel">
       <h2>Laporan Piutang: {{ tahun }}</h2>
       <p class="sub">
-        Total &amp; per golongan akun dalam satu diagram · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
+        Satu diagram per golongan (Total Piutang, Golongan 1, Golongan 2) · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
       </p>
       <p v-if="loading" class="muted">Memuat laporan piutang…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
-      <p v-else-if="!series.length" class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
+      <p v-else-if="!hasChart" class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
       <template v-else>
-        <LineChart
-          :labels="periodKeys.map((p) => p.label)"
-          :series="series"
-          aria-label="Grafik garis piutang total dan per golongan akun"
-        />
-        <p class="muted small note">
-          Hover titik utk nilai rupiah · garis solid = total, dash = golongan ·
-          titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
-        </p>
-        <MoreDetails id="det-piutang" :open="detOpen" @toggle="detOpen = !detOpen">
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Golongan</th>
-                  <th>Kantor</th>
-                  <th v-for="p in periodKeys" :key="p.key" class="ta-r">{{ p.label }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="d in detailRows" :key="d.id">
-                  <td>{{ d.label }}</td>
-                  <td>{{ d.kLabel }}</td>
-                  <td v-for="(c, i) in d.cells" :key="i" class="ta-r num"
-                      :title="c == null ? undefined : formatRupiah(c)">{{ c == null ? '–' : formatRpSingkat(c) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </MoreDetails>
+        <div v-for="c in chartData" :key="c.id" class="chart-block">
+          <h3 class="chart-title">{{ c.label }}</h3>
+          <LineChart
+            :labels="periodKeys.map((p) => p.label)"
+            :series="c.series"
+            :aria-label="`Grafik garis ${c.label} per kantor`"
+          />
+          <p class="note">
+            Hover titik utk nilai rupiah · warna = kantor ·
+            titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
+          </p>
+          <MoreDetails :id="`det-${c.id}`" :open="!!detOpen[c.id]" @toggle="toggleDet(c.id)">
+            <DetailTable :cols="tableCols" :rows="tableRows(c.id)" :per-page="10" />
+          </MoreDetails>
+        </div>
       </template>
     </section>
   </div>
 </template>
 
 <style scoped>
-.note {
-  margin-top: 0.75rem;
+/* Pemisah antar chart golongan (Total, Golongan 1, Golongan 2). */
+.chart-block + .chart-block {
+  margin-top: 1.6rem;
+  padding-top: 1.2rem;
+  border-top: 1px dashed var(--border);
+}
+.chart-title {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  color: var(--primary);
+  margin: 0 0 0.45rem;
 }
 </style>
+

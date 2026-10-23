@@ -2,7 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { currentUser, isLoggedIn, logout } from './stores/auth'
-import { enterPresent, exitPresent, isPresent } from './stores/present'
+import {
+  enterPresent, exitPresent, isPresent,
+  PRESENT_SLIDES, slideIdx, slideTitle, slideTransition,
+  PRESENT_MODULES, currentModulePath,
+  gotoSlide, gotoModule, nextSlide, prevSlide,
+  liveMode, setLive,
+} from './stores/present'
 
 const router = useRouter()
 const route = useRoute()
@@ -36,12 +42,18 @@ onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 /* ---- Present Mode ----
-   Pindah ke /reports dulu (guard auth boleh redirect ke login), baru masuk
-   fullscreen, present tidak pernah aktif di halaman lain. */
+   Deck slide lintas menu (Dashboard, 5 laporan, Likuiditas, Pembiayaan):
+   mulai DARI halaman yang sedang dibuka (bukan dipaksa ke /reports).
+   Halaman di luar deck (mis. /accounts) -> ke Dashboard dulu; tamu -> /login
+   (guard auth boleh redirect; present tidak pernah aktif di luar deck). */
 function onPresent() {
-  const go = route.path === '/reports' ? Promise.resolve() : router.push('/reports')
+  if (!isLoggedIn.value) {
+    void router.push('/login')
+    return
+  }
+  const go = slideIdx.value >= 0 ? Promise.resolve() : router.push('/')
   void go.then(() => {
-    if (route.path === '/reports') void enterPresent()
+    if (slideIdx.value >= 0) void enterPresent()
   })
 }
 
@@ -143,23 +155,23 @@ function onLogout() {
             Laporan Keuangan
           </RouterLink>
 
-          <!-- 3. Likuiditas (menyusul) -->
-          <span class="side-link is-disabled" aria-disabled="true" title="Halaman segera hadir">
+          <!-- 3. Likuiditas (halaman placeholder jujur, konten menyusul) -->
+          <RouterLink to="/likuiditas" class="side-link" active-class="active">
             <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 3.5s5.5 6.1 5.5 9.5a5.5 5.5 0 0 1-11 0c0-3.4 5.5-9.5 5.5-9.5z" />
             </svg>
             Likuiditas
             <span class="side-soon">Segera</span>
-          </span>
+          </RouterLink>
 
-          <!-- 4. Pembiayaan (menyusul) -->
-          <span class="side-link is-disabled" aria-disabled="true" title="Halaman segera hadir">
+          <!-- 4. Pembiayaan (halaman placeholder jujur, konten menyusul) -->
+          <RouterLink to="/pembiayaan" class="side-link" active-class="active">
             <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h11a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM16.5 11.5h2.5" />
             </svg>
             Pembiayaan
             <span class="side-soon">Segera</span>
-          </span>
+          </RouterLink>
         </nav>
 
         <a class="stage-broadcast" href="#" @click.prevent="router.push('/')">
@@ -172,10 +184,61 @@ function onLogout() {
 
       <div class="content">
         <main class="main">
-          <RouterView />
+          <!-- Transisi lintas menu (slide-fwd/slide-back, hanya Present Mode):
+               key = path supaya ganti ?jenis di /reports TIDAK me-remount view
+               (pergantian jenis ditangani Transition dalam Reports.vue). -->
+          <Transition :name="slideTransition" mode="out-in">
+            <RouterView :key="route.path" />
+          </Transition>
         </main>
       </div>
     </div>
+
+    <!-- Nav slideshow deck lintas menu: dropdown pilih modul, ‹/›, dots per
+         slide (dipisah antar menu), counter, judul. Tampil semua saat present. -->
+    <nav v-if="isPresent" class="present-nav" aria-label="Navigasi slide">
+      <select
+        class="pn-modul"
+        aria-label="Pilih modul"
+        :value="currentModulePath"
+        @change="gotoModule(($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="m in PRESENT_MODULES" :key="m.path" :value="m.path">{{ m.label }}</option>
+      </select>
+      <button
+        type="button" class="pn-btn" :disabled="slideIdx === 0"
+        aria-label="Slide sebelumnya" @click="prevSlide"
+      >‹</button>
+      <span class="pn-dots">
+        <template v-for="(s, i) in PRESENT_SLIDES" :key="i">
+          <span v-if="i > 0 && PRESENT_SLIDES[i - 1].path !== s.path" class="pn-gap" aria-hidden="true" />
+          <button
+            type="button"
+            class="pn-dot"
+            :class="{ on: i === slideIdx }"
+            :aria-label="`Slide ${i + 1}: ${s.title}`"
+            :aria-current="i === slideIdx ? 'step' : undefined"
+            @click="gotoSlide(i)"
+          />
+        </template>
+      </span>
+      <button
+        type="button" class="pn-btn" :disabled="slideIdx >= PRESENT_SLIDES.length - 1"
+        aria-label="Slide berikutnya" @click="nextSlide"
+      >›</button>
+      <!-- Toggle LIVE: carousel otomatis (dwell -> scroll pelan bila panjang
+           -> ganti slide, wrap ke pertama); mati lagi saat keluar present. -->
+      <button
+        type="button"
+        class="pn-btn pn-live"
+        :class="{ on: liveMode }"
+        :aria-pressed="liveMode"
+        :aria-label="liveMode ? 'Matikan Live Mode' : 'Aktifkan Live Mode'"
+        @click="setLive(!liveMode)"
+      ><span class="live-dot" aria-hidden="true" />Live</button>
+      <span class="pn-count num">{{ slideIdx + 1 }} / {{ PRESENT_SLIDES.length }}</span>
+      <span class="pn-title">{{ slideTitle }}</span>
+    </nav>
 
     <!-- Tombol keluar Present Mode (topbar tersembunyi selama present) -->
     <button

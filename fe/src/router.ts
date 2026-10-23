@@ -3,6 +3,8 @@ import { isLoggedIn } from './stores/auth'
 import AccountsView from './views/Accounts.vue'
 import DashboardView from './views/Dashboard.vue'
 import LoginView from './views/Login.vue'
+import PembiayaanView from './views/Pembiayaan.vue'
+import LikuiditasView from './views/Likuiditas.vue'
 import ReportsView from './views/Reports.vue'
 
 const routes: RouteRecordRaw[] = [
@@ -11,9 +13,21 @@ const routes: RouteRecordRaw[] = [
   // Halaman khusus login, tidak bisa diakses user biasa (guest)
   { path: '/accounts', name: 'accounts', component: AccountsView, meta: { requiresAuth: true } },
   { path: '/reports', name: 'reports', component: ReportsView, meta: { requiresAuth: true } },
+  // Menu sidebar "menyusul" -> sudah ada halaman (placeholder jujur, tanpa angka)
+  { path: '/likuiditas', name: 'likuiditas', component: LikuiditasView, meta: { requiresAuth: true } },
+  { path: '/pembiayaan', name: 'pembiayaan', component: PembiayaanView, meta: { requiresAuth: true } },
 ]
 
-const router = createRouter({ history: createWebHistory(), routes })
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+  // Navigasi baru -> mulai dari atas (WAJIB utk Live Mode carousel: tiap
+  // slide harus dibuka dari posisi scroll 0). Back/forward browser memakai
+  // posisi tersimpan (savedPosition) agar perilaku native tidak berubah.
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition ?? { top: 0 }
+  },
+})
 
 // HAMBATAN AKSES: guest yang buka halaman login-only dilempar ke /login
 router.beforeEach((to) => {

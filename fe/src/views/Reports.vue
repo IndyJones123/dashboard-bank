@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api, { formatRupiah } from '../api'
 import ReportsHarian from './ReportsHarian.vue'
 import ReportsDpk from './ReportsDpk.vue'
 import ReportsPiutang from './ReportsPiutang.vue'
 import MoreDetails from './MoreDetails.vue'
-import { formatRpSingkat } from '../report-helpers'
+import { formatRpSingkat, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
+import { slideTransition } from '../stores/present'
 
 /* ==========================================================================
    LAPORAN KEUANGAN: 5 jenis laporan:
@@ -45,7 +47,20 @@ interface GlRow {
 // ---- Filter global ----
 // Jenis: 'aset'/'labarugi' = laporan GL (filter global di halaman ini);
 // 'harian'/'dpk'/'piutang' = laporan baru, filter & konten di komponen child
-const glKind = ref('aset')
+// Disimpan di URL (?jenis=...): deep-link, back/forward browser, dan deck
+// slide Present Mode (stores/present.ts) membaca/menulis query yang sama.
+const route = useRoute()
+const router = useRouter()
+const glKind = computed<string>({
+  get() {
+    const k = route.query.jenis
+    if (typeof k === 'string' && (REPORT_KINDS as readonly string[]).includes(k)) return k
+    return 'aset'
+  },
+  set(v) {
+    void router.replace({ query: { ...route.query, jenis: v } })
+  },
+})
 const glTahun = ref('2023')
 // Range tahun utk mode Tahunan, filter "Tahun" berubah jadi "Dari–s.d."
 const glTahunMulai = ref('2021')
@@ -69,20 +84,19 @@ function apiErrText(e: unknown, fallback: string): string {
   return typeof d === 'string' && d ? d : fallback
 }
 
-const glKindLabel: Record<string, string> = {
-  aset: 'Laporan Aset',
-  labarugi: 'Laporan Laba Rugi',
-  harian: 'Laporan Keuangan Harian',
-  dpk: 'Laporan DPK',
-  piutang: 'Laporan Piutang',
-}
+const glKindLabel: Record<string, string> = REPORT_KIND_LABELS
 
 /** Jenis GL pakai filter/tampilan global halaman ini; selain itu tampil di child. */
 const isGl = computed(() => glKind.value === 'aset' || glKind.value === 'labarugi')
 
-function onKindChange(): void {
+// Ganti jenis (dropdown atau ganti slide Present Mode) -> filter query berubah,
+// watcher ini yang load GL & kembali ke atas. Lewati saat pindah halaman lain
+// (route.query ikut berubah selama view masih animasi keluar).
+watch(glKind, () => {
+  if (route.path !== '/reports') return
   if (isGl.value) void loadGl()
-}
+  window.scrollTo({ top: 0 })
+})
 const glApiBase = computed(() => (glKind.value === 'aset' ? 'aset' : 'laba-rugi'))
 const glIsAset = computed(() => glKind.value === 'aset')
 const glTitle = computed(() => glKindLabel[glKind.value] ?? glKind.value)
@@ -336,6 +350,13 @@ const glDiag = computed<DiagState | null>(() => {
   }
 })
 
+/* Animasi draw diagram komparasi (kiri -> kanan, awal -> akhir periode):
+   clip rect melebar; key = daftar kantor terpilih -> draw ulang saat
+   pilihan komparasi ganti (node defs di-remount). uid unik per instance
+   (Vue 3.5 useId) agar 2 instance transisi slide tak bentrok id. */
+const diagUid = useId()
+const diagDrawKey = computed(() => glDiag.value?.lines.map((l) => l.kdloc).join('|') ?? 'none')
+
 /** Label nilai per titik diagram komparasi: format sumbu diagram (Jt/M/T), ≤2 desimal. */
 function glDiagLabel(v: number): string {
   const d = glDiag.value
@@ -516,6 +537,10 @@ onMounted(async () => {
 
 <template>
   <div class="page">
+    <!-- Konten = 1 slide per jenis laporan; transisi ala PowerPoint (push
+         arah-tergantung, mode out-in) hanya aktif saat Present Mode -->
+    <Transition :name="slideTransition" mode="out-in">
+    <div :key="glKind" class="page-slide">
     <div class="page-head">
       <div>
         <h1>Laporan Keuangan</h1>
@@ -532,7 +557,7 @@ onMounted(async () => {
         <div class="filters">
           <label>
             Jenis
-            <select v-model="glKind" @change="onKindChange">
+            <select v-model="glKind">
               <option value="aset">Laporan Aset</option>
               <option value="labarugi">Laporan Laba Rugi</option>
               <option value="harian">Laporan Keuangan Harian</option>
@@ -643,10 +668,11 @@ onMounted(async () => {
 
           <div class="bars">
             <div
-              v-for="b in glBars.list"
+              v-for="(b, bi) in glBars.list"
               :key="b.key"
               class="bar-col"
               :class="b.kind"
+              :style="{ '--i': bi }"
             >
               <span class="bar-val">{{ b.v }}</span>
               <div class="bar-fill" :style="{ height: b.h + '%' }" />
@@ -679,9 +705,14 @@ onMounted(async () => {
               {{ (glMax * (4 - g) / 4 / glScale).toFixed(1) }}{{ glSuffix }}
             </text>
           </g>
-          <g v-for="(r, i) in glChartRows" :key="`${r.kdloc ?? 'all'}-${r.thn}-${r.bln}`">
+          <g
+            v-for="(r, i) in glChartRows"
+            :key="`${r.kdloc ?? 'all'}-${r.thn}-${r.bln}`"
+            :style="{ '--i': i }"
+          >
             <rect
               data-bar
+              class="svg-bar"
               :x="60 + i * (480 / Math.max(1, glChartRows.length))"
               :width="Math.max(4, 480 / Math.max(1, glChartRows.length) - 6)"
               :y="220 - (r.saldo / glMax) * 190"
@@ -693,6 +724,7 @@ onMounted(async () => {
             </rect>
             <text
               v-if="glChartRows.length <= 13"
+              class="svg-bar-val"
               :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
               :y="220 - (r.saldo / glMax) * 190 - 4"
               text-anchor="middle"
@@ -702,6 +734,7 @@ onMounted(async () => {
             >{{ glBarLabel(r.saldo) }}</text>
             <text
               v-if="glChartRows.length <= 13"
+              class="svg-bar-x"
               :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
               y="238"
               text-anchor="middle"
@@ -814,7 +847,13 @@ onMounted(async () => {
         </div>
 
         <div v-if="glDiag" class="chart-wrap diag">
-          <svg :viewBox="'0 0 960 340'" role="img" :aria-label="glDiag.aria">
+          <svg viewBox="0 0 960 340" role="img" :aria-label="glDiag.aria">
+            <!-- Clip animasi draw (kiri -> kanan); key = kantor terpilih -> draw ulang saat pilihan ganti -->
+            <defs :key="diagDrawKey">
+              <clipPath :id="`gldiag-${diagUid}`" clipPathUnits="userSpaceOnUse">
+                <rect class="diag-clip-rect" x="0" y="0" width="960" height="340" style="--diag-w: 960px" />
+              </clipPath>
+            </defs>
             <g v-for="g in glDiag.grid" :key="g.y">
               <line x1="64" :y1="g.y" x2="944" :y2="g.y" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
               <text x="58" :y="g.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ g.label }}</text>
@@ -822,7 +861,11 @@ onMounted(async () => {
             <g v-for="t in glDiag.xTicks" :key="t.x">
               <text :x="t.x" y="326" text-anchor="middle" font-size="10" fill="#475569">{{ t.label }}</text>
             </g>
-            <g v-for="l in glDiag.lines" :key="l.kdloc">
+            <g
+              v-for="l in glDiag.lines"
+              :key="l.kdloc"
+              :clip-path="`url(#gldiag-${diagUid})`"
+            >
               <polyline
                 :points="l.pts.map((p) => `${p.x},${p.y}`).join(' ')"
                 fill="none"
@@ -907,5 +950,10 @@ onMounted(async () => {
       <ReportsDpk v-else-if="glKind === 'dpk'" />
       <ReportsPiutang v-else-if="glKind === 'piutang'" />
     </template>
+    </div><!-- /page-slide -->
+    </Transition>
+
+    <!-- Nav slideshow dipindah ke App.vue: deck lintas menu (Dashboard,
+         5 laporan, Likuiditas, Pembiayaan) -> tampil di semua halaman. -->
   </div>
 </template>
