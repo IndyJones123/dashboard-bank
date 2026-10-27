@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { isLoggedIn } from './stores/auth'
+import { isAdmin, isLoggedIn } from './stores/auth'
 import AccountsView from './views/Accounts.vue'
+import CmsView from './views/Cms.vue'
 import DashboardView from './views/Dashboard.vue'
 import LoginView from './views/Login.vue'
 import PembiayaanView from './views/Pembiayaan.vue'
@@ -12,6 +13,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: LoginView },
   // Halaman khusus login, tidak bisa diakses user biasa (guest)
   { path: '/accounts', name: 'accounts', component: AccountsView, meta: { requiresAuth: true } },
+  // CMS (admin only): editor tema global palet fitlink
+  { path: '/cms', name: 'cms', component: CmsView, meta: { requiresAuth: true, requiresAdmin: true } },
   { path: '/reports', name: 'reports', component: ReportsView, meta: { requiresAuth: true } },
   // Menu sidebar "menyusul" -> sudah ada halaman (placeholder jujur, tanpa angka)
   { path: '/likuiditas', name: 'likuiditas', component: LikuiditasView, meta: { requiresAuth: true } },
@@ -29,10 +32,14 @@ const router = createRouter({
   },
 })
 
-// HAMBATAN AKSES: guest yang buka halaman login-only dilempar ke /login
+// HAMBATAN AKSES: guest yang buka halaman login-only dilempar ke /login;
+// halaman admin (meta requiresAdmin) utk non-admin dilempar ke beranda.
 router.beforeEach((to) => {
   if (to.meta.requiresAuth && !isLoggedIn.value) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (to.meta.requiresAdmin && !isAdmin.value) {
+    return { name: 'dashboard' }
   }
   return true
 })

@@ -101,7 +101,7 @@ table td {
   align-items: center;
   gap: 0.55rem;
   margin-top: 0.55rem;
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   color: var(--muted);
 }
 .pager button {

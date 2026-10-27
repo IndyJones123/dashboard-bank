@@ -248,7 +248,7 @@ onMounted(async () => {
         <div class="chart-wrap">
           <svg viewBox="0 0 560 180" role="img" aria-label="Grafik arus kas">
             <g v-for="g in [0, 1, 2, 3, 4]" :key="g">
-              <line x1="44" :y1="40 + g * 30" x2="550" :y2="40 + g * 30" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
+              <line x1="44" :y1="40 + g * 30" x2="550" :y2="40 + g * 30" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
               <text x="38" :y="44 + g * 30" text-anchor="end" font-size="10" fill="#475569">
                 {{ (maxFlow * (4 - g) / 4 / 1e9).toFixed(0) }}M
               </text>
@@ -258,7 +258,7 @@ onMounted(async () => {
                 class="svg-bar"
                 :x="b.xSetor" :width="26"
                 :y="b.ySetor" :height="160 - b.ySetor"
-                rx="4" fill="#059669"
+                rx="4" fill="#22c55e"
               >
                 <title>Setor {{ b.bulan }}: {{ formatRupiah(b.setor) }}</title>
               </rect>
@@ -266,13 +266,13 @@ onMounted(async () => {
                 class="svg-bar"
                 :x="b.xTarik" :width="26"
                 :y="b.yTarik" :height="160 - b.yTarik"
-                rx="4" fill="#0a192f"
+                rx="4" fill="#1e5fa3"
               >
                 <title>Tarik {{ b.bulan }}: {{ formatRupiah(b.tarik) }}</title>
               </rect>
               <!-- Nilai terlihat di atas tiap batang (tanpa hover) -->
-              <text class="svg-bar-val" :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#047857">{{ b.vSetor }}</text>
-              <text class="svg-bar-val" :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0a192f">{{ b.vTarik }}</text>
+              <text class="svg-bar-val" :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#166534">{{ b.vSetor }}</text>
+              <text class="svg-bar-val" :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0f172a">{{ b.vTarik }}</text>
               <text class="svg-bar-x" :x="b.xSetor + 27" y="175" text-anchor="middle" font-size="11" fill="#475569">
                 {{ b.label }}
               </text>
@@ -280,8 +280,8 @@ onMounted(async () => {
           </svg>
         </div>
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #059669" />Setor</span>
-          <span><i class="swatch" style="background: #0a192f" />Tarik</span>
+          <span><i class="swatch" style="background: #22c55e" />Setor</span>
+          <span><i class="swatch" style="background: #1e5fa3" />Tarik</span>
         </div>
         </template>
         <p v-else class="muted small">Belum ada data arus kas 6 bulan terakhir. Muat ulang halaman setelah backend tersedia.</p>
@@ -293,31 +293,31 @@ onMounted(async () => {
         <template v-if="flow.length">
         <div class="chart-wrap dash-donut">
           <svg viewBox="0 0 200 116" role="img" aria-label="Donat komposisi dana">
-            <circle cx="100" cy="54" r="44" fill="none" stroke="rgba(10,25,47,0.10)" stroke-width="18" />
+            <circle cx="100" cy="54" r="44" fill="none" stroke="rgba(15,23,42,0.10)" stroke-width="18" />
             <circle
               class="donut-arc donut-arc-setor"
-              cx="100" cy="54" r="44" fill="none" stroke="#059669" stroke-width="18"
+              cx="100" cy="54" r="44" fill="none" stroke="#22c55e" stroke-width="18"
               :stroke-dasharray="`${donutSegs.setorLen} ${donutSegs.C}`"
               :style="{ '--seg': donutSegs.setorLen }"
               transform="rotate(-90 100 54)" stroke-linecap="round"
             />
             <circle
               class="donut-arc donut-arc-tarik"
-              cx="100" cy="54" r="44" fill="none" stroke="#0a192f" stroke-width="18"
+              cx="100" cy="54" r="44" fill="none" stroke="#1e5fa3" stroke-width="18"
               :stroke-dasharray="`${donutSegs.tarikLen} ${donutSegs.C}`"
               :stroke-dashoffset="donutSegs.tarikOff"
               :style="{ '--seg': donutSegs.tarikLen, '--C': donutSegs.C }"
               transform="rotate(-90 100 54)" stroke-linecap="round"
             />
-            <text x="100" y="51" text-anchor="middle" font-size="15" font-weight="800" fill="#191c1e">
+            <text x="100" y="51" text-anchor="middle" font-size="15" font-weight="800" fill="#0f172a">
               {{ donut.setorPct.toFixed(0) }}%
             </text>
             <text x="100" y="67" text-anchor="middle" font-size="10" fill="#475569">setor</text>
           </svg>
         </div>
         <ul class="donut-list">
-          <li><span><i class="swatch" style="background: #059669" />Setor</span><strong>{{ formatRupiah(donut.setor) }}</strong></li>
-          <li><span><i class="swatch" style="background: #0a192f" />Tarik</span><strong>{{ formatRupiah(donut.tarik) }}</strong></li>
+          <li><span><i class="swatch" style="background: #22c55e" />Setor</span><strong>{{ formatRupiah(donut.setor) }}</strong></li>
+          <li><span><i class="swatch" style="background: #1e5fa3" />Tarik</span><strong>{{ formatRupiah(donut.tarik) }}</strong></li>
         </ul>
         </template>
         <p v-else class="muted small">Belum ada data komposisi dana untuk periode ini.</p>
@@ -368,12 +368,12 @@ onMounted(async () => {
         <p class="sub">Laba/Rugi per Bulan (setor - tarik, 6 bulan terakhir)</p>
         <div v-if="labaBars" class="chart-wrap">
           <svg viewBox="0 0 480 120" role="img" aria-label="Diagram batang laba rugi per bulan">
-            <line x1="16" :y1="labaBars.yZero" x2="464" :y2="labaBars.yZero" stroke="rgba(10,25,47,0.35)" stroke-width="1" />
+            <line x1="16" :y1="labaBars.yZero" x2="464" :y2="labaBars.yZero" stroke="rgba(15,23,42,0.35)" stroke-width="1" />
             <g v-for="(b, bi) in labaBars.rows" :key="b.bulan" :style="{ '--i': bi }">
-              <rect class="svg-bar" :class="{ neg: b.neg }" :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3" :fill="b.neg ? '#dc2626' : '#059669'">
+              <rect class="svg-bar" :class="{ neg: b.neg }" :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3" :fill="b.neg ? '#dc2626' : '#22c55e'">
                 <title>{{ b.label }}: {{ formatRupiah(b.val) }}{{ b.neg ? ' (rugi)' : '' }}</title>
               </rect>
-              <text class="svg-bar-val" :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="9.5" font-weight="700" :fill="b.neg ? '#b91c1c' : '#047857'">{{ b.lab }}</text>
+              <text class="svg-bar-val" :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="9.5" font-weight="700" :fill="b.neg ? '#b91c1c' : '#166534'">{{ b.lab }}</text>
               <text class="svg-bar-x" :x="b.cx" y="112" text-anchor="middle" font-size="10" fill="#475569">{{ b.label }}</text>
             </g>
           </svg>

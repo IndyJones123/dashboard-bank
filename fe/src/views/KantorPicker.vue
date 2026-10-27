@@ -43,14 +43,14 @@ const summary = (): string => {
 .kantor-pick {
   position: relative;
   display: inline-block;
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 .kantor-pick > summary {
   list-style: none;
   cursor: pointer;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
-  padding: 0.4rem 0.8rem;
+  padding: 0.7rem 0.95rem;
   background: #fff;
   user-select: none;
 }
@@ -62,19 +62,19 @@ const summary = (): string => {
   color: #475569;
 }
 .kantor-pick[open] > summary {
-  border-color: var(--navy, #0a192f);
+  border-color: var(--primary);
 }
 .kp-menu {
   position: absolute;
   z-index: 10;
   top: calc(100% + 0.3rem);
   left: 0;
-  min-width: 14rem;
-  padding: 0.5rem;
+  min-width: 16rem;
+  padding: 0.6rem;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 8px 24px rgb(10 25 47 / 0.12);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.12);
 }
 .kp-quick-row {
   display: flex;
@@ -87,7 +87,7 @@ const summary = (): string => {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--navy, #0a192f);
+  color: var(--primary);
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
@@ -98,7 +98,7 @@ const summary = (): string => {
   align-items: center;
   justify-content: space-between;
   gap: 1.2rem;
-  padding: 0.45rem 0.55rem;
+  padding: 0.6rem 0.65rem;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -109,8 +109,8 @@ const summary = (): string => {
 .kp-item input[type='checkbox'] {
   appearance: none;
   flex: 0 0 auto;
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1.2rem;
+  height: 1.2rem;
   border: 1.5px solid #94a3b8;
   border-radius: 0.25rem;
   background: #fff;
@@ -118,22 +118,22 @@ const summary = (): string => {
   position: relative;
 }
 .kp-item input[type='checkbox']:checked {
-  background: #059669;
-  border-color: #059669;
+  background: var(--green-dark);
+  border-color: var(--green-dark);
 }
 .kp-item input[type='checkbox']:checked::after {
   content: '';
   position: absolute;
-  left: 0.28rem;
-  top: 0.03rem;
-  width: 0.25rem;
-  height: 0.55rem;
+  left: 0.34rem;
+  top: 0.06rem;
+  width: 0.28rem;
+  height: 0.62rem;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 .kp-item input[type='checkbox']:focus-visible {
-  outline: 2px solid #059669;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 </style>

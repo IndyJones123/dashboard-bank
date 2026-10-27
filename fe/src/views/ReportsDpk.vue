@@ -6,6 +6,7 @@ import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
 import KantorPicker from './KantorPicker.vue'
 import DetailTable, { type DetailCol } from './DetailTable.vue'
+import Sparkline from './Sparkline.vue'
 
 /* ==========================================================================
    LAPORAN DPK: /api/laporan/dpk (Laporan-Keuangan-DPK.sql)
@@ -141,6 +142,22 @@ const pctOf = (ket: string): string => {
   const total = sumDes()
   return total ? `${((sumDes(ket) / total) * 100).toFixed(1)}% dari total DPK` : '–'
 }
+/** Deret konsolidasi per periode utk sparkline kartu: JUMLAH saldo semua
+    kantor terlihat per periode — baris = sumber sama dgn kartu/grafik
+    (tanpa angka rekaan); periode tanpa baris = null (garis terputus). */
+const sumSeries = (ket?: string): (number | null)[] =>
+  periodKeys.value.map((p) => {
+    let s = 0
+    let n = 0
+    for (const r of rows.value) {
+      if (hidden.value.includes(r.kdloc)) continue
+      if (ket && r.ket !== ket) continue
+      if (`${r.thn}-${r.bln}` !== p.key) continue
+      s += r.saldo
+      n += 1
+    }
+    return n ? s : null
+  })
 
 async function load(first = false): Promise<void> {
   loading.value = true
@@ -191,16 +208,19 @@ onMounted(() => {
         <span class="label">DPK Tabungan + Deposito</span>
         <strong class="num">{{ loading ? '–' : formatRupiah(sumDes()) }}</strong>
         <span class="muted small">Posisi {{ lastLabel }} · {{ kantors.length }} kantor</span>
+        <Sparkline v-if="!loading" :values="sumSeries()" aria-label="Tren total DPK per bulan" />
       </div>
       <div class="card metric">
         <span class="label">DPK Tabungan</span>
         <strong class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Tabungan')) }}</strong>
         <span class="muted small">{{ loading ? '–' : pctOf('DPK Tabungan') }}</span>
+        <Sparkline v-if="!loading" :values="sumSeries('DPK Tabungan')" aria-label="Tren DPK Tabungan per bulan" />
       </div>
       <div class="card metric">
         <span class="label">DPK Deposito</span>
         <strong class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Deposito')) }}</strong>
         <span class="muted small">{{ loading ? '–' : pctOf('DPK Deposito') }}</span>
+        <Sparkline v-if="!loading" :values="sumSeries('DPK Deposito')" aria-label="Tren DPK Deposito per bulan" />
       </div>
     </section>
 
@@ -242,7 +262,7 @@ onMounted(() => {
 }
 .chart-title {
   font-family: var(--font-display);
-  font-size: 0.98rem;
+  font-size: 1.1rem;
   color: var(--primary);
   margin: 0 0 0.45rem;
 }

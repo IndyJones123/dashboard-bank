@@ -16,6 +16,7 @@ const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref('')
 
+/* Editor tema global (palet CMS fitlink) pindah ke /cms — lihat views/Cms.vue */
 onMounted(async () => {
   try {
     const { data } = await api.get('/api/accounts', { params: { limit: 20 } })
@@ -33,6 +34,7 @@ onMounted(async () => {
     <h1>Data Rekening <span class="badge in">LOGIN</span></h1>
     <p class="muted">Halaman ini dilindungi route-guard, tamu otomatis dilempar ke halaman login.</p>
     <p v-if="error" class="alert">{{ error }}</p>
+
     <p v-if="loading" class="muted">Memuat…</p>
     <section v-else class="panel">
       <div class="table-scroll">

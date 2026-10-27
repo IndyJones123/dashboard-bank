@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { currentUser, isLoggedIn, logout } from './stores/auth'
+import { currentUser, isAdmin, isLoggedIn, logout } from './stores/auth'
 import {
   enterPresent, exitPresent, isPresent,
   PRESENT_SLIDES, slideIdx, slideTitle, slideTransition,
@@ -96,13 +96,6 @@ function onLogout() {
 
       <div class="top-actions">
         <span class="top-context">{{ topContext }}</span>
-        <!-- Present Mode: klik -> pindah ke /reports + mode fullscreen slideshow -->
-        <button type="button" class="btn-navy" aria-label="Present Mode" @click="onPresent">
-          <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 4h18v12H3zM8 20h8M12 16v4" />
-          </svg>
-          <span class="btn-label">Present Mode</span>
-        </button>
         <RouterLink v-if="!isLoggedIn" to="/login" class="btn-ghost" aria-label="Login">
           <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h11" />
@@ -172,14 +165,28 @@ function onLogout() {
             Pembiayaan
             <span class="side-soon">Segera</span>
           </RouterLink>
+
+          <!-- 5. CMS (khusus admin): editor tema global — hapus entry ini
+               bila palet keluar dari CMS -->
+          <RouterLink v-if="isAdmin" to="/cms" class="side-link" active-class="active">
+            <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16" />
+              <circle cx="9" cy="6" r="2" />
+              <circle cx="15" cy="12" r="2" />
+              <circle cx="8" cy="18" r="2" />
+            </svg>
+            CMS
+          </RouterLink>
         </nav>
 
-        <a class="stage-broadcast" href="#" @click.prevent="router.push('/')">
+        <!-- Present Mode (dipindah dari topbar atas permintaan owner):
+             klik -> mulai deck slideshow; tamu -> /login (onPresent) -->
+        <button type="button" class="stage-broadcast" aria-label="Present Mode" @click="onPresent">
           <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 11v2a1 1 0 0 0 1 1h2l4 4V6L7 10H5a1 1 0 0 0-1 1zM16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+            <path d="M3 4h18v12H3zM8 20h8M12 16v4" />
           </svg>
-          Stage Broadcast
-        </a>
+          Present Mode
+        </button>
       </aside>
 
       <div class="content">

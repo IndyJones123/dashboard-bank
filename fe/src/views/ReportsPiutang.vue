@@ -6,6 +6,7 @@ import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
 import KantorPicker from './KantorPicker.vue'
 import DetailTable, { type DetailCol } from './DetailTable.vue'
+import Sparkline from './Sparkline.vue'
 
 /* ==========================================================================
    LAPORAN PIUTANG: /api/laporan/piutang (Laporan-Keuangan-Piutang.sql)
@@ -169,6 +170,21 @@ const growthPct = computed<number | null>(() => {
   if (!totalAwal.value || !totalAkhir.value) return null
   return ((totalAkhir.value - totalAwal.value) / totalAwal.value) * 100
 })
+/** Deret total piutang per periode utk sparkline kartu "Posisi Piutang":
+    jumlah sel pivot tampil per periode (baris = sumber kartu/grafik). */
+const totalSeries = computed<(number | null)[]>(() =>
+  periodKeys.value.map((p) => {
+    let s = 0
+    let n = 0
+    for (const row of mainPivot.value) {
+      const v = row.cells[p.key]
+      if (v == null) continue
+      s += v
+      n += 1
+    }
+    return n ? s : null
+  }),
+)
 async function load(first = false): Promise<void> {
   loading.value = true
   error.value = ''
@@ -221,6 +237,7 @@ onMounted(() => {
         <span class="label">Posisi Piutang</span>
         <strong class="num">{{ loading ? '–' : formatRupiah(totalAkhir) }}</strong>
         <span class="muted small">{{ lastLabel }}</span>
+        <Sparkline v-if="!loading" :values="totalSeries" aria-label="Tren total piutang per bulan" />
       </div>
       <div class="card metric">
         <span class="label">Pertumbuhan Piutang</span>
@@ -279,7 +296,7 @@ onMounted(() => {
 }
 .chart-title {
   font-family: var(--font-display);
-  font-size: 0.98rem;
+  font-size: 1.1rem;
   color: var(--primary);
   margin: 0 0 0.45rem;
 }

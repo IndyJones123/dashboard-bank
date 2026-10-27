@@ -260,6 +260,43 @@ GROUP BY A.kdloc, A.thn, A.bln, A.ket
 ORDER BY A.kdloc, A.thn, A.bln
 """
 
+# ---- app_settings (CMS: tema global fitlink) ----
+# DDL dibuat idempoten — dipakai 2 jalan: (a) Q_APP_SETTINGS_CREATE saat
+# lazy pertama dipakai, (b) Q_APP_SETTINGS_APPLY = migrasi batch boot dari
+# migrations.sql (ISMLM: utk batch multi-pernyataan DDL T-SQL pakai IF ...
+# BEGIN ... END, JANGAN dgn IF diikuti 1 CREATE). Syarat identik dgn
+# be/migrations.sql (sumber rujukan utk menjalankan manual ke DB).
+_APP_SETTINGS_DDL = """
+IF OBJECT_ID(N'dbo.app_settings', N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.app_settings (
+    kkey NVARCHAR(64)  NOT NULL PRIMARY KEY,
+    sval NVARCHAR(MAX) NOT NULL
+  )
+END
+"""
+
+Q_APP_SETTINGS_CREATE = "/* name:app_settings_create */\n" + _APP_SETTINGS_DDL
+
+Q_APP_SETTINGS_APPLY = "/* name:app_settings_apply */\n" + _APP_SETTINGS_DDL
+
+Q_THEME_GET = """
+/* name:theme_get */
+SELECT sval AS value
+FROM app_settings
+WHERE kkey = ?
+"""
+
+Q_THEME_UPDATE = """
+/* name:theme_set */
+UPDATE app_settings SET sval = ? WHERE kkey = ?
+"""
+
+Q_THEME_INSERT = """
+/* name:theme_set */
+INSERT INTO app_settings (kkey, sval) VALUES (?, ?)
+"""
+
 Q_GL_OFFICES = """
 /* name:gl_offices */
 SELECT DISTINCT kodeloc AS kdloc FROM M_NERACA03 ORDER BY kodeloc
@@ -415,6 +452,11 @@ def mock_users() -> list[dict[str, Any]]:
     return [dict(u) for u in _MOCK_USERS]
 
 
+# Tema global di mock: hilang saat restart proses (semantik mock, default
+# fitlink yang dikembalikan app.py saat nilai kosong).
+_MOCK_THEME: dict[str, str] = {}
+
+
 def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     """Pengganti eksekusi SQL saat MOCK_MODE=1."""
     name = _tag(sql)
@@ -448,11 +490,18 @@ def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
         return _mock_dpk(params, name)
     if name == "piutang_golac":
         return _mock_piutang_golac(params)
+    if name == "theme_get":
+        return [{"value": _MOCK_THEME["value"]}] if _MOCK_THEME.get("value") else []
 
     return []
 
 
 def mock_write(sql: str, params: tuple | list = ()) -> int:
+    if _tag(sql) == "theme_set":
+        # UPDATE (value, key) atau INSERT (key, value) — dua-duanya menyimpan
+        p = list(params)
+        _MOCK_THEME["value"] = str(p[0] if "UPDATE" in sql.upper() else p[-1])
+        return 1
     return 1
 
 

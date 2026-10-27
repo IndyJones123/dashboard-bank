@@ -210,15 +210,15 @@ onMounted(() => {
 /* Kartu ringkas: angka pendek + ruang lebih rapat, tetap 1 baris di lebar kecil */
 .sum { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
 .sum .card { padding: 0.55rem 0.8rem; gap: 0.2rem; }
-.sum .card.metric strong { font-size: 1.4rem; line-height: 1.2; white-space: nowrap; }
-.sum .card .small { font-size: 0.7rem; }
+.sum .card.metric strong { font-size: 1.55rem; line-height: 1.2; white-space: nowrap; }
+.sum .card .small { font-size: 0.85rem; }
 
 /* Perincian: header grup jadi pembatas bagian (tanpa 6 tabel terpisah) */
 .harian .grp td {
   background: var(--surface-2);
   border-left: 3px solid var(--primary);
   color: var(--ink);
-  font-size: 0.76rem;
+  font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;

@@ -41,6 +41,19 @@ const maxVal = computed(() => {
   return m || 1
 })
 
+/* Skala: 'abs' = sumbu absolut (0..maks GLOBAL, banding NILAI antar seri);
+   'idx' = indeks per seri (0..100%, tiap garis dinormalisasi ke maksnya
+   sendiri) utk chart campuran magnitudo — seri kecil tidak "tidur" di garis
+   dasar (jebakan lama: 1 seri 24T + 1 seri 300M -> seri kecil = garis datar). */
+const mode = ref<'abs' | 'idx'>('abs')
+const perMax = computed(() =>
+  props.series.map((s) => {
+    let m = 0
+    for (const v of s.values) if (v != null && v > m) m = v
+    return m || 1
+  }),
+)
+
 const trim = (v: number): string => v.toFixed(v < 10 ? 1 : 0)
 const fmtAxis = (v: number): string => {
   if (v >= 1e12) return `${trim(v / 1e12)}T`
@@ -54,39 +67,53 @@ const ticks = computed(() => {
   const mx = maxVal.value
   const plotH = BASE - TOP
   // g=0 = garis dasar (bawah) -> label 0; g=4 (atas) -> label maks.
-  // (Dulu kebalik: dasar dilabeli maks, puncak dilabeli 0.)
+  // Mode indeks: sumbu dlm persen (100% = puncak tiap seri).
   return [0, 1, 2, 3, 4].map((g) => ({
     y: BASE - (g * plotH) / 4,
-    label: fmtAxis((mx * g) / 4),
+    label: mode.value === 'idx' ? `${g * 25}%` : fmtAxis((mx * g) / 4),
   }))
 })
 
 const xAt = (i: number): number =>
   PADL + (i * (W - PADL - PADR)) / Math.max(1, props.labels.length - 1)
-const yAt = (v: number): number => BASE - (v / maxVal.value) * (BASE - TOP)
 
 interface Drawn {
   segs: string[] // polyline points per segmen (null memutus garis)
+  areas: string[] // path area di bawah segmen (gradient; '' utk seri dash)
   pts: { x: number; y: number; v: number; title: string }[]
 }
 
 const drawn = computed<Drawn[]>(() =>
-  props.series.map((s) => {
+  props.series.map((s, si) => {
+    const cap = mode.value === 'idx' ? perMax.value[si] : maxVal.value
     const segs: string[] = []
+    const areas: string[] = []
     let cur: string[] = []
+    const flush = () => {
+      if (cur.length > 1) {
+        segs.push(cur.join(' '))
+        // Area = segmen ditutup ke garis dasar; seri dash (pembanding) tanpa area
+        if (!s.dash) {
+          const x0 = cur[0].split(',')[0]
+          const x1 = cur[cur.length - 1].split(',')[0]
+          areas.push(`M${x0},${BASE} L${cur.join(' L')} L${x1},${BASE} Z`)
+        } else areas.push('')
+      }
+      cur = []
+    }
     const pts: Drawn['pts'] = []
     s.values.forEach((v, i) => {
       if (v == null || i >= props.labels.length) {
-        if (cur.length > 1) segs.push(cur.join(' '))
-        cur = []
+        flush()
         return
       }
-      const x = xAt(i), y = yAt(v)
+      const x = xAt(i)
+      const y = BASE - (v / cap) * (BASE - TOP)
       cur.push(`${x},${y}`)
       pts.push({ x, y, v, title: `${s.label} · ${props.labels[i]}: ${formatRupiah(v)}` })
     })
-    if (cur.length > 1) segs.push(cur.join(' '))
-    return { segs, pts }
+    flush()
+    return { segs, areas, pts }
   }),
 )
 </script>
@@ -105,9 +132,19 @@ const drawn = computed<Drawn[]>(() =>
                 :style="{ '--lc-w': `${W}px` }"
               />
             </clipPath>
+            <!-- Gradient area per seri (fade ke dasar; sentuhan fitlink) -->
+            <linearGradient
+              v-for="(s, si) in series"
+              :id="`lca-${uid}-${si}`"
+              :key="`g${s.key}`"
+              x1="0" y1="0" x2="0" y2="1"
+            >
+              <stop offset="0%" :stop-color="s.color" stop-opacity="0.18" />
+              <stop offset="100%" :stop-color="s.color" stop-opacity="0.01" />
+            </linearGradient>
           </defs>
           <g v-for="t in ticks" :key="t.y">
-            <line :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
+            <line :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
             <text :x="PADL - 8" :y="t.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ t.label }}</text>
           </g>
           <g
@@ -115,6 +152,15 @@ const drawn = computed<Drawn[]>(() =>
             :key="s.key"
             :clip-path="`url(#lcdraw-${uid})`"
           >
+            <!-- Area gradient di bawah garis ('' = seri dash / segmen tunggal) -->
+            <path
+              v-for="(ar, ai) in drawn[si]?.areas ?? []"
+              v-show="ar"
+              :key="`a${ai}`"
+              :d="ar"
+              :fill="`url(#lca-${uid}-${si})`"
+              stroke="none"
+            />
             <polyline
               v-for="(seg, gi) in drawn[si]?.segs ?? []"
               :key="gi"
@@ -138,10 +184,10 @@ const drawn = computed<Drawn[]>(() =>
               v-for="(p, pi) in drawn[si]?.pts ?? []"
               :key="`v${pi}`"
               :x="p.x" :y="p.y - 7" text-anchor="middle"
-              font-size="9" font-weight="700" fill="#191c1e"
+              font-size="9" font-weight="700" fill="#0f172a"
             >{{ fmtAxis(p.v) }}</text>
           </g>
-          <line :x1="PADL" :y1="BASE" :x2="W - PADR" :y2="BASE" stroke="rgba(10,25,47,0.35)" stroke-width="1" />
+          <line :x1="PADL" :y1="BASE" :x2="W - PADR" :y2="BASE" stroke="rgba(15,23,42,0.35)" stroke-width="1" />
           <text
             v-for="(lb, i) in labels"
             :key="lb + i"
@@ -150,14 +196,30 @@ const drawn = computed<Drawn[]>(() =>
         </svg>
       </div>
     </div>
-    <ul class="lc-legend">
-      <li v-for="s in series" :key="s.key">
-        <svg class="lc-key" width="20" height="8" aria-hidden="true">
-          <line x1="0" y1="4" x2="20" y2="4" :stroke="s.color" stroke-width="2.5" :stroke-dasharray="s.dash" />
-        </svg>
-        {{ s.label }}
-      </li>
-    </ul>
+    <!-- Kaki chart: legend chip (kiri) + toggle skala (kanan) -->
+    <div class="lc-foot">
+      <ul class="lc-legend">
+        <li v-for="s in series" :key="s.key">
+          <svg class="lc-key" width="20" height="8" aria-hidden="true">
+            <line x1="0" y1="4" x2="20" y2="4" :stroke="s.color" stroke-width="2.5" :stroke-dasharray="s.dash" />
+          </svg>
+          {{ s.label }}
+        </li>
+      </ul>
+      <div v-if="series.length > 1" class="segmented lc-scale" role="group" aria-label="Skala sumbu-Y">
+        <button type="button" :class="{ on: mode === 'abs' }" @click="mode = 'abs'">
+          Skala absolut
+        </button>
+        <button type="button" :class="{ on: mode === 'idx' }" @click="mode = 'idx'">
+          Skala indeks
+        </button>
+      </div>
+    </div>
+    <p v-if="mode === 'idx'" class="note lc-note">
+      Skala indeks: tiap garis dinormalisasi ke maksimumnya sendiri (100% =
+      puncak garis itu) — utk bandingkan bentuk tren antar seri dgn magnitudo
+      berbeda. Nilai rupiah asli tetap di label titik &amp; tooltip.
+    </p>
   </div>
 </template>
 
@@ -178,15 +240,30 @@ const drawn = computed<Drawn[]>(() =>
 .lc-key {
   flex: 0 0 auto;
 }
+/* Kaki: legend kiri + toggle skala kanan; wrap saat sempit. */
+.lc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.lc-scale {
+  flex: 0 0 auto;
+}
+.lc-note {
+  margin: 0.45rem 0 0;
+}
 /* Legend = chip berbingkai (bukan teks mentah). */
 .lc-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin: 0.6rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 .lc-legend li {
   display: inline-flex;

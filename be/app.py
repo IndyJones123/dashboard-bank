@@ -5,8 +5,12 @@ Akun mock: admin/admin123 (admin) | user/user123 (member)
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import re
 
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -311,3 +315,130 @@ def laporan_piutang(
     rows = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG, (tahun, kdloc)))
     golac = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG_GOLAC, (tahun, kdloc)))
     return {"tahun": tahun, "kdloc": kdloc, "rows": rows, "golac": golac}
+
+
+# ---------------------------------------------------------------------------
+#  THEME GLOBAL (palet fitlink) — app_settings(key='theme', value=JSON 9 hex)
+#  GET  : publik (semua user/tamu butuh warna saat load); gagal DB -> default.
+#  PUT  : admin only; tabel dibuat idempoten saat pertama dipakai (lazy —
+#         boot tidak pernah menunggu DB).
+#  Token = 9 hex solid (FE menghitung var turunan: ring/soft/deret rgba).
+# ---------------------------------------------------------------------------
+
+THEME_KEY = "theme"
+THEME_TOKENS = (
+    "bg", "surface", "surface-2", "ink", "muted",
+    "primary", "accent", "green", "red",
+)
+_HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
+# Nilai default = palet fitlink persis seperti :root fe/src/style.css
+DEFAULT_THEME = {
+    "bg": "#f8fafc",
+    "surface": "#ffffff",
+    "surface-2": "#f2f4f6",
+    "ink": "#0f172a",
+    "muted": "#475569",
+    "primary": "#1e5fa3",
+    "accent": "#4cb5ff",
+    "green": "#22c55e",
+    "red": "#dc2626",
+}
+
+_theme_ready = False
+
+
+def _ensure_theme_table() -> None:
+    """CREATE app_settings bila belum ada — idempoten, aman dipanggil ulang."""
+    global _theme_ready
+    if _theme_ready:
+        return
+    db.run_sql(Q.Q_APP_SETTINGS_CREATE)
+    _theme_ready = True
+
+
+def _load_theme() -> dict[str, str]:
+    """Baca tema tersimpan, merge ke default; baris rusak/hilang -> default."""
+    out = dict(DEFAULT_THEME)
+    rows = db.run_query(Q.Q_THEME_GET, (THEME_KEY,))
+    if not rows:
+        return out
+    try:
+        saved = json.loads(rows[0].get("value") or "")
+    except (ValueError, TypeError):
+        return out
+    if isinstance(saved, dict):
+        for k, v in saved.items():
+            if k in THEME_TOKENS and isinstance(v, str) and _HEX6.match(v):
+                out[k] = v.lower()
+    return out
+
+
+class ThemeIn(BaseModel):
+    tokens: dict[str, str]
+
+
+@app.get("/api/theme")
+def get_theme():
+    """Palet tema global. Publik; DB/tabel tak tersedia -> palet default
+    fitlink (JANGAN 500 — warna wajib tetap terkirim ke UI)."""
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        return {"tokens": _load_theme(), "source": "db"}
+    except Exception:
+        return {"tokens": dict(DEFAULT_THEME), "source": "default"}
+
+
+@app.put("/api/theme")
+def put_theme(body: ThemeIn, user: dict = Depends(current_user)):
+    """Simpan palet (admin only). Hanya token dikenal dgn #RRGGBB valid;
+    token lain diabaikan. Parsial di-merge dgn tema tersimpan."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah tema")
+    tokens = {
+        k: v.strip().lower()
+        for k, v in body.tokens.items()
+        if k in THEME_TOKENS and isinstance(v, str) and _HEX6.match(v.strip())
+    }
+    if not tokens:
+        raise HTTPException(status_code=422, detail="Tidak ada token warna valid (format #RRGGBB)")
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        merged = {**_load_theme(), **tokens}
+        value = json.dumps(merged, separators=(",", ":"))
+        affected = db.run_sql(Q.Q_THEME_UPDATE, (value, THEME_KEY))
+        if not affected:
+            db.run_sql(Q.Q_THEME_INSERT, (THEME_KEY, value))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Gagal menyimpan tema — {_db_detail(exc)}")
+    return {"ok": True, "tokens": merged}
+
+
+# ---------------------------------------------------------------------------
+#  MIGRASI — be/migrations.sql dijalankan saat boot (latar, threadpool).
+#  Setiap batch WAJIB idempoten (guard IF OBJECT_ID ... IS NULL) supaya aman
+#  diulang tiap start. Gagal/DB mati TIDAK memblokir boot (health & login
+#  tetap jalan); lazy _ensure_theme_table tetap sbg jaring saat pertama
+#  dipakai. MOCK_MODE dilewati (store in-memory via queries._MOCK_THEME).
+# ---------------------------------------------------------------------------
+def _ensure_schema() -> None:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "migrations.sql")
+    with open(path, encoding="utf-8") as fh:
+        raw = fh.read()
+    for part in raw.split("\nGO\n"):
+        part = part.strip()
+        if part:
+            db.run_sql(part)
+
+
+@app.on_event("startup")
+async def run_migrations() -> None:
+    if db.MOCK_MODE:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _ensure_schema)
+    except Exception as exc:
+        # Jangan tahan boot — cetak sebabnya, jaring lazy menangani nanti.
+        print(f"[migrasi] migrations.sql gagal diterapkan (lanjut boot): {exc}")

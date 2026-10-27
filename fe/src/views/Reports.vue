@@ -6,6 +6,7 @@ import ReportsHarian from './ReportsHarian.vue'
 import ReportsDpk from './ReportsDpk.vue'
 import ReportsPiutang from './ReportsPiutang.vue'
 import MoreDetails from './MoreDetails.vue'
+import Sparkline from './Sparkline.vue'
 import { formatRpSingkat, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
 import { slideTransition } from '../stores/present'
 
@@ -232,7 +233,7 @@ const glKantorTable = computed(() =>
    Geometri: viewBox 960×340, plot x 64..944 / y 16..304, skala DARI NOL
    (komparasi jujur antar kantor; berbeda dgn bar code.html yang zoom).
    ========================================================================== */
-const DIAG_COLORS = ['#059669', '#0A192F', '#D97706', '#0284C7', '#7C3AED', '#E11D48', '#0D9488', '#DB2777']
+const DIAG_COLORS = ['#22C55E', '#1E5FA3', '#D97706', '#0284C7', '#7C3AED', '#E11D48', '#0D9488', '#DB2777']
 
 // null = belum pernah dipilih -> default SEMUA kantor tampil
 const glCompare = ref<string[] | null>(null)
@@ -396,6 +397,11 @@ const glSum = computed(() => {
 const glTotal = computed(() => (glIsArus.value ? glSum.value : glStok.value))
 const glTotalLabel = computed(() =>
   glIsArus.value ? `Total ${glGranular.value} ${glEndYear.value}` : `Posisi akhir ${glEndYear.value}`,
+)
+/** Deret utk sparkline kartu metrik GL: saldo konsolidasi per baris chart
+    (periode & sumber = grafik menu 1 — tanpa angka rekaan). */
+const glTotalSeries = computed<(number | null)[]>(() =>
+  glChartRows.value.map((r) => r.saldo),
 )
 const glLastDelta = computed(() => {
   if (glChartRows.value.length < 2) return null
@@ -617,6 +623,11 @@ onMounted(async () => {
           <i class="dot" aria-hidden="true" />
           {{ glIsArus ? 'Arus periode berjalan' : 'Posisi stok' }}
         </span>
+        <Sparkline
+          v-if="!glLoading && !glError && glTotalSeries.length > 1"
+          :values="glTotalSeries"
+          :aria-label="`Tren ${glTotalLabel} per periode`"
+        />
       </div>
       <div class="card metric">
         <span class="label">Jenis Laporan</span>
@@ -654,7 +665,7 @@ onMounted(async () => {
       <!-- Aset bulanan: bar DOM mengikuti code.html (baseline + Q1–Q4) -->
       <div v-else-if="glBars.list.length" class="chart-dom">
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #059669" />Posisi {{ glTahun }} (T)</span>
+          <span><i class="swatch" style="background: #22c55e" />Posisi {{ glTahun }} (T)</span>
           <span v-if="glBaseline">
             <i class="swatch dashed" aria-hidden="true" />Baseline {{ glBaseline.thn }} ({{ glCompact(glBaseline.saldo) }})
           </span>
@@ -695,12 +706,12 @@ onMounted(async () => {
         <svg viewBox="0 0 560 260" role="img" :aria-label="`Grafik ${glTitle} ${glPeriodText}`">
           <defs>
             <linearGradient id="glBarGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#059669" stop-opacity="1" />
-              <stop offset="100%" stop-color="#059669" stop-opacity="0.35" />
+              <stop offset="0%" stop-color="#22c55e" stop-opacity="1" />
+              <stop offset="100%" stop-color="#22c55e" stop-opacity="0.35" />
             </linearGradient>
           </defs>
           <g v-for="g in [0, 1, 2, 3, 4]" :key="g">
-            <line x1="44" :y1="20 + g * 50" x2="550" :y2="20 + g * 50" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
+            <line x1="44" :y1="20 + g * 50" x2="550" :y2="20 + g * 50" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
             <text x="38" :y="24 + g * 50" text-anchor="end" font-size="10" fill="#475569">
               {{ (glMax * (4 - g) / 4 / glScale).toFixed(1) }}{{ glSuffix }}
             </text>
@@ -730,7 +741,7 @@ onMounted(async () => {
               text-anchor="middle"
               font-size="9"
               font-weight="700"
-              fill="#191c1e"
+              fill="#0f172a"
             >{{ glBarLabel(r.saldo) }}</text>
             <text
               v-if="glChartRows.length <= 13"
@@ -746,7 +757,7 @@ onMounted(async () => {
           </g>
         </svg>
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #059669" />{{ glTitle }}: {{ glPeriodText }}</span>
+          <span><i class="swatch" style="background: #22c55e" />{{ glTitle }}: {{ glPeriodText }}</span>
         </div>
       </div>
 
@@ -855,7 +866,7 @@ onMounted(async () => {
               </clipPath>
             </defs>
             <g v-for="g in glDiag.grid" :key="g.y">
-              <line x1="64" :y1="g.y" x2="944" :y2="g.y" stroke="rgba(10,25,47,0.10)" stroke-width="1" />
+              <line x1="64" :y1="g.y" x2="944" :y2="g.y" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
               <text x="58" :y="g.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ g.label }}</text>
             </g>
             <g v-for="t in glDiag.xTicks" :key="t.x">
@@ -882,7 +893,7 @@ onMounted(async () => {
                 <text
                   :x="p.x" :y="p.y - 7"
                   :text-anchor="pi === 0 ? 'start' : pi === l.pts.length - 1 ? 'end' : 'middle'"
-                  font-size="9" font-weight="700" fill="#191c1e"
+                  font-size="9" font-weight="700" fill="#0f172a"
                   stroke="#fff" stroke-width="2.5" paint-order="stroke"
                   style="pointer-events: none"
                 >{{ glDiagLabel(p.saldo) }}</text>

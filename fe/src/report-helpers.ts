@@ -36,7 +36,7 @@ export const REPORT_KIND_LABELS: Record<string, string> = {
 
 /** Palet warna kantor utk chart, cukup kontras di kedua tema (bukan text-500). */
 export const KANTOR_PALETTE = [
-  '#0a192f', '#2563eb', '#059669', '#b45309', '#7c3aed',
+  '#1e5fa3', '#2563eb', '#059669', '#b45309', '#7c3aed',
   '#dc2626', '#0891b2', '#be185d', '#4d7c0f',
 ]
 
