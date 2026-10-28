@@ -263,6 +263,11 @@ function noneCompare(): void {
   glCompare.value = []
 }
 
+/** Tutup dropdown <details> kantor setelah opsi diklik. */
+function closeKantorDd(e: MouseEvent): void {
+  ;(e.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
+}
+
 interface DiagPt {
   x: number
   y: number
@@ -912,14 +917,31 @@ onMounted(async () => {
       <!-- Data terperinci per kantor: tersembunyi default, tombol More details -->
       <template v-if="!glLoading && !glError && glKantorTable.length">
         <MoreDetails id="det-gl-kantor" :open="glDetKantor" @toggle="glDetKantor = !glDetKantor">
-        <template #actions>
-          <label class="details-filter">
-            Kantor
-            <select v-model="glKdloc">
-              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 (Semua)' : k }}</option>
-            </select>
-          </label>
-        </template>
+        <!-- Filter Kantor gaya dropdown "Pilih Lokasi": tampil hanya saat
+             panel More details terbuka (ikut <slot> di dalam details-body). -->
+        <div class="table-filter">
+          <details class="kantor-dd">
+            <summary>
+              Kantor: {{ glKdloc === '00' ? 'Semua' : glKdloc }}
+              <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </summary>
+            <div class="kantor-dd-menu" role="group" aria-label="Pilih kantor tabel detail">
+              <button
+                v-for="k in glOffices"
+                :key="k"
+                type="button"
+                class="kantor-dd-item"
+                :class="{ on: glKdloc === k }"
+                @click="glKdloc = k; closeKantorDd($event)"
+              >
+                <i class="check" aria-hidden="true">{{ glKdloc === k ? '✓' : '' }}</i>
+                {{ k === '00' ? 'Semua' : `BPRS ${k}` }}
+              </button>
+            </div>
+          </details>
+        </div>
         <div class="table-scroll">
           <table>
           <thead>

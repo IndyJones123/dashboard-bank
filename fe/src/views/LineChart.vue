@@ -41,18 +41,8 @@ const maxVal = computed(() => {
   return m || 1
 })
 
-/* Skala: 'abs' = sumbu absolut (0..maks GLOBAL, banding NILAI antar seri);
-   'idx' = indeks per seri (0..100%, tiap garis dinormalisasi ke maksnya
-   sendiri) utk chart campuran magnitudo — seri kecil tidak "tidur" di garis
-   dasar (jebakan lama: 1 seri 24T + 1 seri 300M -> seri kecil = garis datar). */
-const mode = ref<'abs' | 'idx'>('abs')
-const perMax = computed(() =>
-  props.series.map((s) => {
-    let m = 0
-    for (const v of s.values) if (v != null && v > m) m = v
-    return m || 1
-  }),
-)
+/* Sumbu absolut (0..maks GLOBAL) — banding nilai antar seri apa adanya.
+   Toggle "skala indeks" dihapus: satu skala saja, tanpa dinormalisasi. */
 
 const trim = (v: number): string => v.toFixed(v < 10 ? 1 : 0)
 const fmtAxis = (v: number): string => {
@@ -67,10 +57,9 @@ const ticks = computed(() => {
   const mx = maxVal.value
   const plotH = BASE - TOP
   // g=0 = garis dasar (bawah) -> label 0; g=4 (atas) -> label maks.
-  // Mode indeks: sumbu dlm persen (100% = puncak tiap seri).
   return [0, 1, 2, 3, 4].map((g) => ({
     y: BASE - (g * plotH) / 4,
-    label: mode.value === 'idx' ? `${g * 25}%` : fmtAxis((mx * g) / 4),
+    label: fmtAxis((mx * g) / 4),
   }))
 })
 
@@ -84,8 +73,8 @@ interface Drawn {
 }
 
 const drawn = computed<Drawn[]>(() =>
-  props.series.map((s, si) => {
-    const cap = mode.value === 'idx' ? perMax.value[si] : maxVal.value
+  props.series.map((s) => {
+    const cap = maxVal.value
     const segs: string[] = []
     const areas: string[] = []
     let cur: string[] = []
@@ -196,7 +185,7 @@ const drawn = computed<Drawn[]>(() =>
         </svg>
       </div>
     </div>
-    <!-- Kaki chart: legend chip (kiri) + toggle skala (kanan) -->
+    <!-- Kaki chart: legend chip -->
     <div class="lc-foot">
       <ul class="lc-legend">
         <li v-for="s in series" :key="s.key">
@@ -206,20 +195,7 @@ const drawn = computed<Drawn[]>(() =>
           {{ s.label }}
         </li>
       </ul>
-      <div v-if="series.length > 1" class="segmented lc-scale" role="group" aria-label="Skala sumbu-Y">
-        <button type="button" :class="{ on: mode === 'abs' }" @click="mode = 'abs'">
-          Skala absolut
-        </button>
-        <button type="button" :class="{ on: mode === 'idx' }" @click="mode = 'idx'">
-          Skala indeks
-        </button>
-      </div>
     </div>
-    <p v-if="mode === 'idx'" class="note lc-note">
-      Skala indeks: tiap garis dinormalisasi ke maksimumnya sendiri (100% =
-      puncak garis itu) — utk bandingkan bentuk tren antar seri dgn magnitudo
-      berbeda. Nilai rupiah asli tetap di label titik &amp; tooltip.
-    </p>
   </div>
 </template>
 
@@ -244,16 +220,10 @@ const drawn = computed<Drawn[]>(() =>
 .lc-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.6rem 1rem;
   flex-wrap: wrap;
   margin-top: 0.6rem;
-}
-.lc-scale {
-  flex: 0 0 auto;
-}
-.lc-note {
-  margin: 0.45rem 0 0;
 }
 /* Legend = chip berbingkai (bukan teks mentah). */
 .lc-legend {
