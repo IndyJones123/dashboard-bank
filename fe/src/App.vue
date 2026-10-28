@@ -23,6 +23,9 @@ const topContext = computed(() => {
   return new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 })
 
+/* Tanggal hari ini di sidebar, format Indonesia panjang: "28 Oktober 2026" */
+const todayId = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+
 /* ---- Drawer sidebar (mobile) ----
    Tampil di layar ≤860px: hamburger di topbar membuka sidebar sebagai drawer
    off-canvas. Tutup otomatis saat pindah halaman, klik backdrop, atau Esc. */
@@ -124,6 +127,13 @@ function onLogout() {
           <span class="side-user-info">
             <strong>{{ currentUser?.full_name || currentUser?.username || 'Tamu' }}</strong>
             <small>{{ isLoggedIn ? currentUser?.role : 'Belum login' }}</small>
+            <!-- Tanggal hari ini (format Indonesia) + penanda data live dari database -->
+            <small class="side-user-meta">
+              <span class="live-badge" title="Data ditampilkan langsung dari database">
+                <i class="live-dot" aria-hidden="true" />Live
+              </span>
+              {{ todayId }}
+            </small>
           </span>
         </div>
 
