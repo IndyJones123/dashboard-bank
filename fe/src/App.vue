@@ -13,15 +13,12 @@ import {
 const router = useRouter()
 const route = useRoute()
 
-/* Konteks kanan navbar: tanggal untuk tamu, sapaan + nama untuk user login */
-const topContext = computed(() => {
-  if (isLoggedIn.value && currentUser.value) {
-    const h = new Date().getHours()
-    const sapa = h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 18 ? 'Selamat sore' : 'Selamat malam'
-    return `${sapa}, ${currentUser.value.full_name || currentUser.value.username}`
-  }
-  return new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-})
+/* Konteks kanan navbar: cukup tanggal ringkas. Ucapan sapa
+   ("Selamat siang, Budi Santoso") DIHAPUS — Live + tanggal lengkap
+   tampil di sidebar (side-user-meta). */
+const topContext = computed(() =>
+  new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
+)
 
 /* Tanggal hari ini di sidebar, format Indonesia panjang: "28 Oktober 2026" */
 const todayId = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
