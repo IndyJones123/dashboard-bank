@@ -158,7 +158,9 @@ function onLogout() {
               <path d="M12 3.5s5.5 6.1 5.5 9.5a5.5 5.5 0 0 1-11 0c0-3.4 5.5-9.5 5.5-9.5z" />
             </svg>
             Likuiditas
-            <span class="side-soon">Segera</span>
+            <span class="side-soon" data-tip="Modul ini sedang disiapkan">
+              <i class="side-soon-dot" aria-hidden="true" />Segera
+            </span>
           </RouterLink>
 
           <!-- 4. Pembiayaan (halaman placeholder jujur, konten menyusul) -->
@@ -167,7 +169,9 @@ function onLogout() {
               <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h11a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM16.5 11.5h2.5" />
             </svg>
             Pembiayaan
-            <span class="side-soon">Segera</span>
+            <span class="side-soon" data-tip="Modul ini sedang disiapkan">
+              <i class="side-soon-dot" aria-hidden="true" />Segera
+            </span>
           </RouterLink>
 
           <!-- 5. CMS (khusus admin): editor tema global — hapus entry ini
