@@ -810,14 +810,6 @@ onMounted(async () => {
         <div>
           <h2>{{ glTitle }}: Rincian per Kantor</h2>
         </div>
-        <div class="filters">
-          <label>
-            Kantor
-            <select v-model="glKdloc">
-              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 (Semua)' : k }}</option>
-            </select>
-          </label>
-        </div>
       </div>
 
       <p v-if="glLoading" class="muted">Memuat data GL…</p>
@@ -842,19 +834,22 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="compare-chips" role="group" aria-label="Pilih BPRS untuk diagram komparasi">
-          <button
-            v-for="k in glKantors"
-            :key="k"
-            type="button"
-            class="compare-chip"
-            :class="{ on: glCompareSel.includes(k) }"
-            :aria-pressed="glCompareSel.includes(k)"
-            @click="toggleCompare(k)"
-          >
-            <i class="swatch" :style="{ background: diagColor(k) }" aria-hidden="true" />
-            {{ k }}
-          </button>
+        <div class="compare-select">
+          <details class="kantor-dd">
+            <summary>
+              Pilih Lokasi ({{ glCompareSel.length }})
+              <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+            </summary>
+            <div class="kantor-dd-menu" role="group" aria-label="Pilih BPRS untuk diagram komparasi">
+              <label v-for="k in glKantors" :key="k" class="kantor-dd-item">
+                <input type="checkbox" :checked="glCompareSel.includes(k)" @change="toggleCompare(k)" />
+                <i class="swatch" :style="{ background: diagColor(k) }" aria-hidden="true" />
+                BPRS {{ k }}
+              </label>
+            </div>
+          </details>
         </div>
 
         <div v-if="glDiag" class="chart-wrap diag">
@@ -889,10 +884,14 @@ onMounted(async () => {
                 <circle :cx="p.x" :cy="p.y" r="3" :fill="l.color">
                   <title>BPRS {{ l.kdloc }} · {{ p.label }}: {{ formatRupiah(p.saldo) }}</title>
                 </circle>
-                <!-- Nilai terlihat di atas tiap titik (halo putih biar kebaca di atas garis) -->
+                <!-- Nilai hanya di titik awal & akhir (hindari tumpang tindih
+                     antar titik rapat); nilai per titik tetap via hover <title>.
+                     Titik awal digeser kanan, akhir digeser kiri: bebas dari
+                     label sumbu-Y di tepi kiri & tepi kanan area plot. -->
                 <text
-                  :x="p.x" :y="p.y - 7"
-                  :text-anchor="pi === 0 ? 'start' : pi === l.pts.length - 1 ? 'end' : 'middle'"
+                  v-if="pi === 0 || pi === l.pts.length - 1"
+                  :x="pi === 0 ? p.x + 8 : p.x - 8" :y="p.y - 7"
+                  :text-anchor="pi === 0 ? 'start' : 'end'"
                   font-size="9" font-weight="700" fill="#0f172a"
                   stroke="#fff" stroke-width="2.5" paint-order="stroke"
                   style="pointer-events: none"
@@ -913,6 +912,14 @@ onMounted(async () => {
       <!-- Data terperinci per kantor: tersembunyi default, tombol More details -->
       <template v-if="!glLoading && !glError && glKantorTable.length">
         <MoreDetails id="det-gl-kantor" :open="glDetKantor" @toggle="glDetKantor = !glDetKantor">
+        <template #actions>
+          <label class="details-filter">
+            Kantor
+            <select v-model="glKdloc">
+              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 (Semua)' : k }}</option>
+            </select>
+          </label>
+        </template>
         <div class="table-scroll">
           <table>
           <thead>
