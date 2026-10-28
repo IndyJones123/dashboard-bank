@@ -178,9 +178,9 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--primary); }
 .side-user-info { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .side-user-info strong { font-size: 0.9rem; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-user-info small { color: var(--muted); font-size: 0.76rem; }
-/* Baris meta sidebar: badge LIVE (dot berkedip = data langsung dari
-   database) + tanggal hari ini format Indonesia */
-.side-user-meta { display: inline-flex; align-items: center; gap: 0.4rem; }
+/* Badge LIVE di navbar (top-actions) — dot berkedip = data langsung dari
+   database. Tanggal ringkas + badge tampil berdampingan di kanan topbar. */
+.top-live { align-self: center; }
 .live-badge {
   display: inline-flex; align-items: center; gap: 0.25rem;
   padding: 0.05rem 0.4rem;

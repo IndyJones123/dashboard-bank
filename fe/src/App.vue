@@ -14,15 +14,12 @@ import {
 const router = useRouter()
 const route = useRoute()
 
-/* Konteks kanan navbar: cukup tanggal ringkas. Ucapan sapa
-   ("Selamat siang, Budi Santoso") DIHAPUS — Live + tanggal lengkap
-   tampil di sidebar (side-user-meta). */
+/* Konteks kanan navbar: badge Live (dot berkedip) + tanggal ringkas.
+   Ucapan sapa ("Selamat siang, Budi Santoso") DIHAPUS; tanggal lengkap di
+   sidebar juga dihapus — Live + tanggal ringkas cukup di navbar. */
 const topContext = computed(() =>
   new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
 )
-
-/* Tanggal hari ini di sidebar, format Indonesia panjang: "28 Oktober 2026" */
-const todayId = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
 /* ---- Drawer sidebar (mobile) ----
    Tampil di layar ≤860px: hamburger di topbar membuka sidebar sebagai drawer
@@ -98,6 +95,10 @@ function onLogout() {
       </div>
 
       <div class="top-actions">
+        <!-- Penanda data live (dot berkedip) + tanggal ringkas hari ini -->
+        <span class="live-badge top-live" title="Data ditampilkan langsung dari database">
+          <i class="live-dot" aria-hidden="true" />Live
+        </span>
         <span class="top-context">{{ topContext }}</span>
         <RouterLink v-if="!isLoggedIn" to="/login" class="btn-ghost" aria-label="Login">
           <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
@@ -127,13 +128,6 @@ function onLogout() {
           <span class="side-user-info">
             <strong>{{ currentUser?.full_name || currentUser?.username || 'Tamu' }}</strong>
             <small>{{ isLoggedIn ? currentUser?.role : 'Belum login' }}</small>
-            <!-- Tanggal hari ini (format Indonesia) + penanda data live dari database -->
-            <small class="side-user-meta">
-              <span class="live-badge" title="Data ditampilkan langsung dari database">
-                <i class="live-dot" aria-hidden="true" />Live
-              </span>
-              {{ todayId }}
-            </small>
           </span>
         </div>
 
