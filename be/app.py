@@ -416,6 +416,107 @@ def put_theme(body: ThemeIn, user: dict = Depends(current_user)):
 
 
 # ---------------------------------------------------------------------------
+#  BRANDING (CMS identitas bank) — app_settings(key='branding', value=JSON
+#  {bank_name, icon, logo}).
+#  - Nama bank dipakai FE utk brand navbar + judul tab (document.title).
+#  - Icon (favicon) & logo disimpan sebagai DATA URL base64 DI MEMORI
+#    (mode mock: dict proses BE; mode live: kolom NVARCHAR(MAX)) — tanpa
+#    S3/storage file, sesuai permintaan CMS.
+#  GET : publik (judul/favicon/logo harus benar sebelum login).
+#  PUT : admin only; field tidak dikirim = tetap, null = hapus (default).
+# ---------------------------------------------------------------------------
+
+BRANDING_KEY = "branding"
+DEFAULT_BRANDING: dict = {"bank_name": "BankDash", "icon": None, "logo": None}
+# Data URL gambar yang diterima: png/jpeg/webp/svg/x-icon
+_DATA_URL = re.compile(
+    r"^data:image/(?:png|jpe?g|webp|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,"
+    r"[A-Za-z0-9+/]+={0,2}$"
+)
+MAX_IMG_CHARS = 500_000  # ~375 KB binary — cukup utk favicon & logo web
+
+
+def _load_branding() -> dict:
+    """Baca branding tersimpan, merge dgn default; JSON rusak -> default."""
+    out = dict(DEFAULT_BRANDING)
+    rows = db.run_query(Q.Q_BRANDING_GET, (BRANDING_KEY,))
+    if not rows:
+        return out
+    try:
+        saved = json.loads(rows[0].get("value") or "")
+    except (ValueError, TypeError):
+        return out
+    if isinstance(saved, dict):
+        name = saved.get("bank_name")
+        if isinstance(name, str) and name.strip():
+            out["bank_name"] = name.strip()[:60]
+        for k in ("icon", "logo"):
+            v = saved.get(k)
+            if isinstance(v, str) and v.startswith("data:image/"):
+                out[k] = v
+    return out
+
+
+class BrandingIn(BaseModel):
+    bank_name: str | None = None
+    icon: str | None = None
+    logo: str | None = None
+
+
+@app.get("/api/branding")
+def get_branding():
+    """Identitas bank (nama + icon + logo). Publik; gagal DB -> default."""
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        return _load_branding()
+    except Exception:
+        return dict(DEFAULT_BRANDING)
+
+
+@app.put("/api/branding")
+def put_branding(body: BrandingIn, user: dict = Depends(current_user)):
+    """Simpan identitas bank (admin only). Field tidak dikirim = tetap;
+    icon/logo null = kembali ke default (favicon.svg / brand bawaan)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah identitas bank")
+    current = _load_branding()
+    updates: dict = {}
+    if "bank_name" in body.model_fields_set:
+        name = (body.bank_name or "").strip()
+        if not name or len(name) > 60:
+            raise HTTPException(status_code=422, detail="Nama bank wajib diisi, maks 60 karakter")
+        updates["bank_name"] = name
+    for k in ("icon", "logo"):
+        if k not in body.model_fields_set:
+            continue
+        v = body.icon if k == "icon" else body.logo
+        if v is None:
+            updates[k] = None
+            continue
+        v = v.strip()
+        if len(v) > MAX_IMG_CHARS or not _DATA_URL.match(v):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Gambar {k} tidak valid — pakai data:image/...;base64, maks ~375 KB",
+            )
+        updates[k] = v
+    if not updates:
+        raise HTTPException(status_code=422, detail="Tidak ada perubahan yang dikirim")
+    merged = {**current, **updates}
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        value = json.dumps(merged, separators=(",", ":"))
+        affected = db.run_sql(Q.Q_BRANDING_UPDATE, (value, BRANDING_KEY))
+        if not affected:
+            db.run_sql(Q.Q_BRANDING_INSERT, (BRANDING_KEY, value))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Gagal menyimpan identitas — {_db_detail(exc)}")
+    return {"ok": True, **merged}
+
+
+# ---------------------------------------------------------------------------
 #  MIGRASI — be/migrations.sql dijalankan saat boot (latar, threadpool).
 #  Setiap batch WAJIB idempoten (guard IF OBJECT_ID ... IS NULL) supaya aman
 #  diulang tiap start. Gagal/DB mati TIDAK memblokir boot (health & login

@@ -297,6 +297,27 @@ Q_THEME_INSERT = """
 INSERT INTO app_settings (kkey, sval) VALUES (?, ?)
 """
 
+# ---- Branding (CMS identitas bank): nama bank + icon + logo ---------------
+# Nilai = JSON {bank_name, icon, logo}; icon/logo = data URL base64 yang
+# disimpan DI MEMORI (mode mock: dict proses; mode live: kolom NVARCHAR(MAX)
+# app_settings) — tanpa S3/storage file, sesuai kebutuhan CMS.
+Q_BRANDING_GET = """
+/* name:branding_get */
+SELECT sval AS value
+FROM app_settings
+WHERE kkey = ?
+"""
+
+Q_BRANDING_UPDATE = """
+/* name:branding_set */
+UPDATE app_settings SET sval = ? WHERE kkey = ?
+"""
+
+Q_BRANDING_INSERT = """
+/* name:branding_set */
+INSERT INTO app_settings (kkey, sval) VALUES (?, ?)
+"""
+
 Q_GL_OFFICES = """
 /* name:gl_offices */
 SELECT DISTINCT kodeloc AS kdloc FROM M_NERACA03 ORDER BY kodeloc
@@ -456,6 +477,9 @@ def mock_users() -> list[dict[str, Any]]:
 # fitlink yang dikembalikan app.py saat nilai kosong).
 _MOCK_THEME: dict[str, str] = {}
 
+# Branding (nama bank + icon/logo base64) di mock — juga in-memory proses.
+_MOCK_BRANDING: dict[str, str] = {}
+
 
 def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     """Pengganti eksekusi SQL saat MOCK_MODE=1."""
@@ -492,15 +516,22 @@ def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
         return _mock_piutang_golac(params)
     if name == "theme_get":
         return [{"value": _MOCK_THEME["value"]}] if _MOCK_THEME.get("value") else []
+    if name == "branding_get":
+        return [{"value": _MOCK_BRANDING["value"]}] if _MOCK_BRANDING.get("value") else []
 
     return []
 
 
 def mock_write(sql: str, params: tuple | list = ()) -> int:
-    if _tag(sql) == "theme_set":
+    tag = _tag(sql)
+    if tag == "theme_set":
         # UPDATE (value, key) atau INSERT (key, value) — dua-duanya menyimpan
         p = list(params)
         _MOCK_THEME["value"] = str(p[0] if "UPDATE" in sql.upper() else p[-1])
+        return 1
+    if tag == "branding_set":
+        p = list(params)
+        _MOCK_BRANDING["value"] = str(p[0] if "UPDATE" in sql.upper() else p[-1])
         return 1
     return 1
 

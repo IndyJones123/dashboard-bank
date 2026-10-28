@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { currentUser, isAdmin, isLoggedIn, logout } from './stores/auth'
+import { bankName, logoUrl } from './stores/branding'
 import {
   enterPresent, exitPresent, isPresent,
   PRESENT_SLIDES, slideIdx, slideTitle, slideTransition,
@@ -83,12 +84,14 @@ function onLogout() {
 
         <RouterLink to="/" class="brand">
           <span class="brand-mark">
-            <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px">
+            <!-- Logo custom dari CMS (data URL, di memori BE); default = SVG gedung -->
+            <img v-if="logoUrl" :src="logoUrl" alt="" class="brand-logo" />
+            <svg v-else class="ico-svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px">
               <path d="M4 10h16M5 10v9M19 10v9M9 10v9M15 10v9M3 21h18M12 3l8 5H4l8-5z" />
             </svg>
           </span>
           <span class="brand-name">
-            BankDash
+            {{ bankName }}
             <em>Treasury Command</em>
           </span>
         </RouterLink>
