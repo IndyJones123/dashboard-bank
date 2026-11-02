@@ -16,7 +16,7 @@ const accounts = ref<Account[]>([])
 const loading = ref(true)
 const error = ref('')
 
-/* Editor tema global (palet CMS fitlink) pindah ke /cms — lihat views/Cms.vue */
+/* Editor tema global (palet CMS fitlink) pindah ke /cms: lihat views/Cms.vue */
 onMounted(async () => {
   try {
     const { data } = await api.get('/api/accounts', { params: { limit: 20 } })
@@ -31,28 +31,33 @@ onMounted(async () => {
 
 <template>
   <div class="page">
-    <h1>Data Rekening <span class="badge in">LOGIN</span></h1>
-    <p class="muted">Halaman ini dilindungi route-guard, tamu otomatis dilempar ke halaman login.</p>
+    <div class="page-head">
+      <div>
+        <h1>Data Rekening</h1>
+        <p>20 rekening pertama, hanya untuk pengguna yang login.</p>
+      </div>
+    </div>
     <p v-if="error" class="alert">{{ error }}</p>
 
-    <p v-if="loading" class="muted">Memuat…</p>
-    <section v-else class="panel">
-      <div class="table-scroll">
+    <p v-if="loading" class="muted">Memuat data rekening…</p>
+    <section v-else-if="!error" class="panel">
+      <div v-if="accounts.length" class="table-scroll">
       <table>
         <thead>
-          <tr><th>No. Rekening</th><th>Nasabah</th><th>Jenis</th><th>Saldo</th><th>Dibuka</th></tr>
+          <tr><th>No. Rekening</th><th>Nasabah</th><th>Jenis</th><th class="ta-r">Saldo</th><th>Dibuka</th></tr>
         </thead>
         <tbody>
           <tr v-for="a in accounts" :key="a.id">
-            <td>{{ a.no_rekening }}</td>
-            <td>{{ a.nasabah }}<br /><small class="muted">{{ a.kota }}</small></td>
+            <td class="num">{{ a.no_rekening }}</td>
+            <td>{{ a.nasabah }}<span class="cell-sub">{{ a.kota }}</span></td>
             <td>{{ a.jenis }}</td>
-            <td>{{ formatRupiah(a.saldo) }}</td>
+            <td class="ta-r num">{{ formatRupiah(a.saldo) }}</td>
             <td>{{ a.dibuka_pada }}</td>
           </tr>
         </tbody>
       </table>
       </div>
+      <p v-else class="muted">Belum ada rekening untuk ditampilkan.</p>
     </section>
   </div>
 </template>

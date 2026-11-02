@@ -5,7 +5,9 @@
 -- supaya aman diulang tiap proses.
 --
 -- 001: app_settings — store CMS (tema global palet fitlink).
---      kkey = nama entri ('theme'), sval = JSON 9 hex token warna.
+--      kkey = nama entri: 'theme' (sval = JSON 9 hex token warna),
+--      'bank_name' (sval = teks nama bank), 'bank_logo' dan 'bank_favicon'
+--      (sval = data URL base64, kosong = gambar bawaan).
 -- =============================================================================
 IF OBJECT_ID(N'dbo.app_settings', N'U') IS NULL
 BEGIN

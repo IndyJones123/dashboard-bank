@@ -10,7 +10,7 @@ import Sparkline from './Sparkline.vue'
 
 /* ==========================================================================
    LAPORAN DPK: /api/laporan/dpk (Laporan-Keuangan-DPK.sql)
-   Tampilan DIAGRAM GARIS: 2 chart TERPISAH — DPK Tabungan & DPK Deposito
+   Tampilan DIAGRAM GARIS: 2 chart TERPISAH: DPK Tabungan & DPK Deposito
    (jangan digabung), masing-masing dgn tabel terperinci sendiri (paginated,
    1 baris/kolom + gulir horizontal). WARNA = kantor.
    Kunci sel: ket|kdloc|thn-bln.
@@ -89,7 +89,7 @@ const tableCols = computed<DetailCol[]>(() => [
   ...periodKeys.value.map((p) => ({ key: p.key, label: p.label, right: true })),
 ])
 
-/** Satu entri chart per produk (Tabungan, Deposito) — TIDAK digabung jadi 1 chart. */
+/** Satu entri chart per produk (Tabungan, Deposito): TIDAK digabung jadi 1 chart. */
 const charts = computed<{ ket: string; id: string; short: string; series: LineSerie[] }[]>(
   () =>
     kets.value.map((ket) => ({
@@ -106,7 +106,7 @@ const charts = computed<{ ket: string; id: string; short: string; series: LineSe
 )
 
 /** Baris tabel per chart: 1 baris per kantor, kolom = periode (paginated DetailTable).
-    Fungsi biasa (bukan computed) — dipanggil saat render, dependensi tetap ter-track. */
+    Fungsi biasa (bukan computed): dipanggil saat render, dependensi tetap ter-track. */
 const tableRows = (ket: string) =>
   visibleKantors.value.map((k) => ({
     id: k,
@@ -114,9 +114,9 @@ const tableRows = (ket: string) =>
     ...Object.fromEntries(periodKeys.value.map((p) => [p.key, val(ket, k, p.key)])),
   }))
 
-/** Bulan & label terakhir dgn data (DB bisa parsial, mis. 2024 s.d. Mei) —
+/** Bulan & label terakhir dgn data (DB bisa parsial, mis. 2024 s.d. Mei) :
     kartu tidak boleh 0 padahal grafik ada isinya. 'Punya data' = saldo > 0:
-    baris bln depan di snapshot parsial balik saldo 0 — existence saja bikin
+    baris bln depan di snapshot parsial balik saldo 0: existence saja bikin
     kartu lompat ke Des berisi Rp 0. */
 const lastBln = computed<string>(
   () =>
@@ -143,7 +143,7 @@ const pctOf = (ket: string): string => {
   return total ? `${((sumDes(ket) / total) * 100).toFixed(1)}% dari total DPK` : '–'
 }
 /** Deret konsolidasi per periode utk sparkline kartu: JUMLAH saldo semua
-    kantor terlihat per periode — baris = sumber sama dgn kartu/grafik
+    kantor terlihat per periode: baris = sumber sama dgn kartu/grafik
     (tanpa angka rekaan); periode tanpa baris = null (garis terputus). */
 const sumSeries = (ket?: string): (number | null)[] =>
   periodKeys.value.map((p) => {
@@ -186,48 +186,54 @@ onMounted(() => {
 
 <template>
   <div>
-    <section class="panel">
-      <div class="toolbar">
-        <div class="filters">
-          <label>
-            Tahun
-            <select v-model="tahun" @change="load()">
-              <option v-for="y in Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))" :key="y" :value="y">
-                {{ y }}
-              </option>
-            </select>
-          </label>
-          <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
+    <div class="toolbar report-filters">
+      <div class="filters">
+        <label>
+          Tahun
+          <select v-model="tahun" @change="load()">
+            <option v-for="y in Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))" :key="y" :value="y">
+              {{ y }}
+            </option>
+          </select>
+        </label>
+        <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
+      </div>
+      <span v-if="loading" class="muted small">Memuat laporan…</span>
+    </div>
+
+    <section class="lead">
+      <div>
+        <p class="lead-label">DPK Tabungan + Deposito</p>
+        <p class="lead-value num">{{ loading ? '–' : formatRupiah(sumDes()) }}</p>
+        <p class="lead-note">Posisi {{ lastLabel }}, {{ kantors.length }} kantor</p>
+      </div>
+      <div>
+        <div class="lead-spark">
+          <Sparkline v-if="!loading" :values="sumSeries()" aria-label="Tren total DPK per bulan" />
         </div>
-        <span v-if="loading" class="muted small">Memuat…</span>
-      </div>
-    </section>
-
-    <section class="cards">
-      <div class="card metric">
-        <span class="label">DPK Tabungan + Deposito</span>
-        <strong class="num">{{ loading ? '–' : formatRupiah(sumDes()) }}</strong>
-        <span class="muted small">Posisi {{ lastLabel }} · {{ kantors.length }} kantor</span>
-        <Sparkline v-if="!loading" :values="sumSeries()" aria-label="Tren total DPK per bulan" />
-      </div>
-      <div class="card metric">
-        <span class="label">DPK Tabungan</span>
-        <strong class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Tabungan')) }}</strong>
-        <span class="muted small">{{ loading ? '–' : pctOf('DPK Tabungan') }}</span>
-        <Sparkline v-if="!loading" :values="sumSeries('DPK Tabungan')" aria-label="Tren DPK Tabungan per bulan" />
-      </div>
-      <div class="card metric">
-        <span class="label">DPK Deposito</span>
-        <strong class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Deposito')) }}</strong>
-        <span class="muted small">{{ loading ? '–' : pctOf('DPK Deposito') }}</span>
-        <Sparkline v-if="!loading" :values="sumSeries('DPK Deposito')" aria-label="Tren DPK Deposito per bulan" />
+        <dl class="ledger">
+          <div>
+            <dt>DPK Tabungan <small>{{ loading ? '–' : pctOf('DPK Tabungan') }}</small></dt>
+            <span class="ledger-spark">
+              <Sparkline v-if="!loading" :values="sumSeries('DPK Tabungan')" aria-label="Tren DPK Tabungan per bulan" />
+            </span>
+            <dd class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Tabungan')) }}</dd>
+          </div>
+          <div>
+            <dt>DPK Deposito <small>{{ loading ? '–' : pctOf('DPK Deposito') }}</small></dt>
+            <span class="ledger-spark">
+              <Sparkline v-if="!loading" :values="sumSeries('DPK Deposito')" aria-label="Tren DPK Deposito per bulan" />
+            </span>
+            <dd class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Deposito')) }}</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Laporan DPK: {{ tahun }}</h2>
+      <h2>Tren {{ tahun }}</h2>
       <p class="sub">
-        Satu diagram per produk (Tabungan &amp; Deposito terpisah) · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
+        Satu diagram per produk. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.
       </p>
       <p v-if="loading" class="muted">Memuat laporan DPK…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
@@ -241,8 +247,8 @@ onMounted(() => {
             :aria-label="`Grafik garis DPK ${c.short.toLowerCase()} per kantor`"
           />
           <p class="note">
-            Hover titik utk nilai rupiah · warna = kantor ·
-            titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
+            Arahkan kursor ke titik untuk nilai rupiah penuh. Titik pertama
+            (Des tahun sebelumnya) adalah saldo awal tahun.
           </p>
           <MoreDetails :id="`det-${c.id}`" :open="!!detOpen[c.id]" @toggle="toggleDet(c.id)">
             <DetailTable :cols="tableCols" :rows="tableRows(c.ket)" :per-page="10" />
@@ -252,19 +258,4 @@ onMounted(() => {
     </section>
   </div>
 </template>
-
-<style scoped>
-/* Pemisah antar chart produk (Tabungan vs Deposito). */
-.chart-block + .chart-block {
-  margin-top: 1.6rem;
-  padding-top: 1.2rem;
-  border-top: 1px dashed var(--border);
-}
-.chart-title {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  color: var(--primary);
-  margin: 0 0 0.45rem;
-}
-</style>
 

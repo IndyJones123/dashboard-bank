@@ -117,13 +117,13 @@ const labaBars = computed(() => {
   const yMax = Math.max(0, ...vals)
   const yMin = Math.min(0, ...vals)
   const range = yMax - yMin || 1
-  const yZero = 94 - ((0 - yMin) / range) * 78
-  const step = 444 / rows.length
+  const yZero = 150 - ((0 - yMin) / range) * 126
+  const step = 300 / rows.length
   return {
     yZero,
     rows: rows.map((r, i) => {
-      const yv = 94 - ((r.laba - yMin) / range) * 78
-      const cx = 16 + step * (i + 0.5)
+      const yv = 150 - ((r.laba - yMin) / range) * 126
+      const cx = step * (i + 0.5)
       const neg = r.laba < 0
       return {
         bulan: r.bulan, label: shortMonth(r.bulan), val: r.laba,
@@ -181,212 +181,192 @@ onMounted(async () => {
     <div class="page-head">
       <div>
         <h1>Dashboard</h1>
-        <p class="muted small">Ringkasan kinerja bank, data publik, update harian.</p>
+        <p>Ringkasan kinerja bank, diperbarui harian.</p>
       </div>
-      <span v-if="isLoggedIn" class="badge in">LOGIN</span>
-      <span v-else class="badge info">TAMU</span>
     </div>
 
     <p v-if="error" class="alert">{{ error }}</p>
-    <p v-if="loading" class="muted">Memuat data…</p>
+    <p v-if="loading" class="muted">Memuat ringkasan dashboard…</p>
 
-    <!-- Kartu statistik -->
-    <section v-if="stats" class="cards">
-      <div class="card">
-        <div class="card-ico blue" aria-hidden="true">
-          <svg class="ico-svg" viewBox="0 0 24 24"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19M10 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4M15.5 4.6a3 3 0 0 1 0 5.8" /></svg>
-        </div>
-        <div class="card-body">
-          <span class="label">Total Nasabah</span>
-          <strong>{{ stats.total_nasabah?.toLocaleString('id-ID') ?? '–' }}</strong>
-          <span class="muted small">terdaftar aktif</span>
-        </div>
+    <!-- Angka utama: Total Simpanan jadi fokus, 3 angka lain sebagai rincian -->
+    <section v-if="stats" class="lead">
+      <div>
+        <p class="lead-label">Total Simpanan</p>
+        <p class="lead-value num">{{ formatRupiah(stats.total_simpanan) }}</p>
+        <p class="lead-note">Akumulasi seluruh rekening</p>
       </div>
-      <div class="card">
-        <div class="card-ico green" aria-hidden="true">
-          <svg class="ico-svg" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h11A2.5 2.5 0 0 1 19 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 3 16.5zM3 9.5h18M7 14.5h4" /></svg>
+      <dl class="ledger">
+        <div>
+          <dt>Total Nasabah <small>Terdaftar aktif</small></dt>
+          <dd class="num">{{ stats.total_nasabah?.toLocaleString('id-ID') ?? '–' }}</dd>
         </div>
-        <div class="card-body">
-          <span class="label">Total Simpanan</span>
-          <strong>{{ formatRupiah(stats.total_simpanan) }}</strong>
-          <span class="muted small">akumulasi rekening</span>
+        <div>
+          <dt>Transaksi Hari Ini <small>Setor dan tarik</small></dt>
+          <dd class="num">{{ stats.transaksi_hari_ini?.toLocaleString('id-ID') ?? '–' }}</dd>
         </div>
-      </div>
-      <div class="card">
-        <div class="card-ico amber" aria-hidden="true">
-          <svg class="ico-svg" viewBox="0 0 24 24"><path d="M4 8h12.5M13.5 5 16.5 8l-3 3M20 16H7.5M10.5 13l-3 3 3 3" /></svg>
+        <div>
+          <dt>Kredit Berjalan <small>Sisa pokok</small></dt>
+          <dd class="num">{{ formatRupiah(stats.kredit_berjalan) }}</dd>
         </div>
-        <div class="card-body">
-          <span class="label">Transaksi Hari Ini</span>
-          <strong>{{ stats.transaksi_hari_ini?.toLocaleString('id-ID') ?? '–' }}</strong>
-          <span class="muted small">setor + tarik</span>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-ico red" aria-hidden="true">
-          <svg class="ico-svg" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4v13H6zM14 3.5v4h4M9.5 13h5M9.5 16.5h5" /></svg>
-        </div>
-        <div class="card-body">
-          <span class="label">Kredit Berjalan</span>
-          <strong>{{ formatRupiah(stats.kredit_berjalan) }}</strong>
-          <span class="muted small">sisa pokok</span>
-        </div>
-      </div>
+      </dl>
     </section>
 
-    <!-- 4 kuadran kompak: grafik, donat, transaksi, insight (1 layar) -->
     <div class="dash-grid">
-      <div class="panel">
+      <section class="panel span-8">
         <h2>Arus Kas 6 Bulan Terakhir</h2>
         <p class="sub">
-          Setor vs tarik per bulan
+          Setor dan tarik per bulan.
           <span v-if="setorDelta !== null" :class="['delta', setorDelta >= 0 ? 'up' : 'down']">
-            {{ setorDelta >= 0 ? '▲' : '▼' }} {{ Math.abs(setorDelta).toFixed(1) }}% setor MoM
+            Setor {{ setorDelta >= 0 ? '▲' : '▼' }} {{ Math.abs(setorDelta).toFixed(1) }}% dari bulan lalu
           </span>
         </p>
         <template v-if="flow.length">
         <div class="chart-wrap">
-          <svg viewBox="0 0 560 180" role="img" aria-label="Grafik arus kas">
+          <svg viewBox="0 18 560 164" role="img" aria-label="Grafik arus kas">
             <g v-for="g in [0, 1, 2, 3, 4]" :key="g">
-              <line x1="44" :y1="40 + g * 30" x2="550" :y2="40 + g * 30" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
-              <text x="38" :y="44 + g * 30" text-anchor="end" font-size="10" fill="#475569">
+              <line class="l-grid" x1="44" :y1="40 + g * 30" x2="550" :y2="40 + g * 30" />
+              <text class="t-axis" x="38" :y="44 + g * 30" text-anchor="end" font-size="10">
                 {{ (maxFlow * (4 - g) / 4 / 1e9).toFixed(0) }}M
               </text>
             </g>
             <g v-for="(b, bi) in flowBars" :key="b.bulan" :style="{ '--i': bi }">
               <rect
-                class="svg-bar"
+                class="svg-bar s1"
                 :x="b.xSetor" :width="26"
                 :y="b.ySetor" :height="160 - b.ySetor"
-                rx="4" fill="#22c55e"
+                rx="3"
               >
                 <title>Setor {{ b.bulan }}: {{ formatRupiah(b.setor) }}</title>
               </rect>
               <rect
-                class="svg-bar"
+                class="svg-bar s2"
                 :x="b.xTarik" :width="26"
                 :y="b.yTarik" :height="160 - b.yTarik"
-                rx="4" fill="#1e5fa3"
+                rx="3"
               >
                 <title>Tarik {{ b.bulan }}: {{ formatRupiah(b.tarik) }}</title>
               </rect>
               <!-- Nilai terlihat di atas tiap batang (tanpa hover) -->
-              <text class="svg-bar-val" :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#166534">{{ b.vSetor }}</text>
-              <text class="svg-bar-val" :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#0f172a">{{ b.vTarik }}</text>
-              <text class="svg-bar-x" :x="b.xSetor + 27" y="175" text-anchor="middle" font-size="11" fill="#475569">
+              <text class="svg-bar-val t-val" :x="b.xSetor + 13" :y="b.ySetor - 5" text-anchor="middle" font-size="8.5">{{ b.vSetor }}</text>
+              <text class="svg-bar-val t-val" :x="b.xTarik + 13" :y="b.yTarik - 5" text-anchor="middle" font-size="8.5">{{ b.vTarik }}</text>
+              <text class="svg-bar-x t-axis" :x="b.xSetor + 27" y="175" text-anchor="middle" font-size="10">
                 {{ b.label }}
               </text>
             </g>
           </svg>
         </div>
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #22c55e" />Setor</span>
-          <span><i class="swatch" style="background: #1e5fa3" />Tarik</span>
+          <span><i class="swatch s-primary" />Setor</span>
+          <span><i class="swatch s-accent" />Tarik</span>
         </div>
         </template>
-        <p v-else class="muted small">Belum ada data arus kas 6 bulan terakhir. Muat ulang halaman setelah backend tersedia.</p>
-      </div>
+        <p v-else class="muted">Belum ada data arus kas 6 bulan terakhir. Muat ulang halaman setelah backend tersedia.</p>
+      </section>
 
-      <div class="panel">
+      <section class="panel span-4">
         <h2>Komposisi Dana</h2>
         <p class="sub">Total 6 bulan terakhir</p>
-        <template v-if="flow.length">
-        <div class="chart-wrap dash-donut">
-          <svg viewBox="0 0 200 116" role="img" aria-label="Donat komposisi dana">
-            <circle cx="100" cy="54" r="44" fill="none" stroke="rgba(15,23,42,0.10)" stroke-width="18" />
-            <circle
-              class="donut-arc donut-arc-setor"
-              cx="100" cy="54" r="44" fill="none" stroke="#22c55e" stroke-width="18"
-              :stroke-dasharray="`${donutSegs.setorLen} ${donutSegs.C}`"
-              :style="{ '--seg': donutSegs.setorLen }"
-              transform="rotate(-90 100 54)" stroke-linecap="round"
-            />
-            <circle
-              class="donut-arc donut-arc-tarik"
-              cx="100" cy="54" r="44" fill="none" stroke="#1e5fa3" stroke-width="18"
-              :stroke-dasharray="`${donutSegs.tarikLen} ${donutSegs.C}`"
-              :stroke-dashoffset="donutSegs.tarikOff"
-              :style="{ '--seg': donutSegs.tarikLen, '--C': donutSegs.C }"
-              transform="rotate(-90 100 54)" stroke-linecap="round"
-            />
-            <text x="100" y="51" text-anchor="middle" font-size="15" font-weight="800" fill="#0f172a">
-              {{ donut.setorPct.toFixed(0) }}%
-            </text>
-            <text x="100" y="67" text-anchor="middle" font-size="10" fill="#475569">setor</text>
-          </svg>
+        <div v-if="flow.length" class="donut-row">
+          <div class="chart-wrap dash-donut">
+            <svg viewBox="0 0 116 116" role="img" aria-label="Donat komposisi dana">
+              <circle class="d-track" cx="58" cy="58" r="44" fill="none" stroke-width="18" />
+              <circle
+                class="donut-arc donut-arc-setor d1"
+                cx="58" cy="58" r="44" fill="none" stroke-width="18"
+                :stroke-dasharray="`${donutSegs.setorLen} ${donutSegs.C}`"
+                :style="{ '--seg': donutSegs.setorLen }"
+                transform="rotate(-90 58 58)"
+              />
+              <circle
+                class="donut-arc donut-arc-tarik d2"
+                cx="58" cy="58" r="44" fill="none" stroke-width="18"
+                :stroke-dasharray="`${donutSegs.tarikLen} ${donutSegs.C}`"
+                :stroke-dashoffset="donutSegs.tarikOff"
+                :style="{ '--seg': donutSegs.tarikLen, '--C': donutSegs.C }"
+                transform="rotate(-90 58 58)"
+              />
+              <text class="t-val" x="58" y="58" text-anchor="middle" font-size="17">
+                {{ donut.setorPct.toFixed(0) }}%
+              </text>
+              <text class="t-axis" x="58" y="71" text-anchor="middle" font-size="10">setor</text>
+            </svg>
+          </div>
+          <ul class="donut-list">
+            <li><span><i class="swatch s-primary" />Setor</span><strong class="num">{{ formatRupiah(donut.setor) }}</strong></li>
+            <li><span><i class="swatch s-accent" />Tarik</span><strong class="num">{{ formatRupiah(donut.tarik) }}</strong></li>
+          </ul>
         </div>
-        <ul class="donut-list">
-          <li><span><i class="swatch" style="background: #22c55e" />Setor</span><strong>{{ formatRupiah(donut.setor) }}</strong></li>
-          <li><span><i class="swatch" style="background: #1e5fa3" />Tarik</span><strong>{{ formatRupiah(donut.tarik) }}</strong></li>
-        </ul>
-        </template>
-        <p v-else class="muted small">Belum ada data komposisi dana untuk periode ini.</p>
-      </div>
+        <p v-else class="muted">Belum ada data komposisi dana untuk periode ini.</p>
+      </section>
 
-    <!-- Transaksi terbaru -->
-    <section class="panel">
-      <h2>Transaksi Terbaru</h2>
-      <div v-if="recent.length" class="table-scroll">
-      <table>
-        <thead>
-          <tr><th>Tanggal</th><th>Nasabah</th><th>Jenis</th><th>Nominal</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="t in recent" :key="t.id">
-            <td>{{ t.tanggal }}</td>
-            <td>{{ t.nasabah }}</td>
-            <td><span :class="['badge', t.jenis === 'SETOR' ? 'in' : 'out']">{{ t.jenis }}</span></td>
-            <td>{{ formatRupiah(t.nominal) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-      <p v-else class="muted small">Belum ada transaksi tercatat. Muat ulang halaman setelah backend tersedia.</p>
-    </section>
-
-    <!-- Area khusus login (v-if) -->
-    <section v-if="isLoggedIn" class="panel premium">
-      <h2>Insight Nasabah Prioritas <span class="badge in">LOGIN</span></h2>
-      <p v-if="loadingPremium" class="muted">Memuat data premium…</p>
-      <template v-else>
-        <div v-if="topDeposits.length" class="table-scroll">
+      <section class="panel span-5">
+        <h2>Transaksi Terbaru</h2>
+        <div v-if="recent.length" class="table-scroll">
         <table>
           <thead>
-            <tr><th>Nasabah</th><th>Kota</th><th>Rekening</th><th>Total Saldo</th></tr>
+            <tr><th class="hide-sm">Tanggal</th><th>Nasabah</th><th>Jenis</th><th class="ta-r">Nominal</th></tr>
           </thead>
           <tbody>
-            <tr v-for="t in topDeposits" :key="t.nama">
-              <td>{{ t.nama }}</td>
-              <td>{{ t.kota }}</td>
-              <td>{{ t.jumlah_rekening }}</td>
-              <td>{{ formatRupiah(t.total_saldo) }}</td>
+            <tr v-for="t in recent" :key="t.id">
+              <td class="hide-sm">{{ t.tanggal }}</td>
+              <td>{{ t.nasabah }}<span class="cell-sub show-sm">{{ t.tanggal }}</span></td>
+              <td><span :class="['badge', t.jenis === 'SETOR' ? 'in' : 'out']">{{ t.jenis }}</span></td>
+              <td class="ta-r num">{{ formatRupiah(t.nominal) }}</td>
             </tr>
           </tbody>
         </table>
         </div>
-        <p v-else class="muted small">Belum ada data top deposan.</p>
-        <p class="sub">Laba/Rugi per Bulan (setor - tarik, 6 bulan terakhir)</p>
-        <div v-if="labaBars" class="chart-wrap">
-          <svg viewBox="0 0 480 120" role="img" aria-label="Diagram batang laba rugi per bulan">
-            <line x1="16" :y1="labaBars.yZero" x2="464" :y2="labaBars.yZero" stroke="rgba(15,23,42,0.35)" stroke-width="1" />
-            <g v-for="(b, bi) in labaBars.rows" :key="b.bulan" :style="{ '--i': bi }">
-              <rect class="svg-bar" :class="{ neg: b.neg }" :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3" :fill="b.neg ? '#dc2626' : '#22c55e'">
-                <title>{{ b.label }}: {{ formatRupiah(b.val) }}{{ b.neg ? ' (rugi)' : '' }}</title>
-              </rect>
-              <text class="svg-bar-val" :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="9.5" font-weight="700" :fill="b.neg ? '#b91c1c' : '#166534'">{{ b.lab }}</text>
-              <text class="svg-bar-x" :x="b.cx" y="112" text-anchor="middle" font-size="10" fill="#475569">{{ b.label }}</text>
-            </g>
-          </svg>
-        </div>
-        <p v-else class="muted small">Belum ada data laba/rugi 6 bulan terakhir.</p>
-      </template>
-    </section>
+        <p v-else class="muted">Belum ada transaksi tercatat. Muat ulang halaman setelah backend tersedia.</p>
+      </section>
 
-    <section v-else class="panel locked">
-      <h2>Insight Nasabah Prioritas (login)</h2>
-      <p class="muted">Bagian ini hanya terlihat setelah login. Data top deposan &amp; laba bunga disembunyikan untuk tamu.</p>
-      <button class="btn" @click="router.push({ name: 'login', query: { redirect: '/' } })">Login untuk melihat</button>
-    </section>
+      <!-- Area khusus login (v-if) -->
+      <section v-if="isLoggedIn" class="panel span-7">
+        <h2>Insight Nasabah Prioritas</h2>
+        <p v-if="loadingPremium" class="muted">Memuat nasabah prioritas dan laba rugi…</p>
+        <div v-else class="insight">
+          <div>
+            <h3>Simpanan terbesar</h3>
+            <div v-if="topDeposits.length" class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Nasabah</th><th class="ta-r">Rekening</th><th class="ta-r">Total Saldo</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in topDeposits" :key="t.nama">
+                  <td>{{ t.nama }}<span class="cell-sub">{{ t.kota }}</span></td>
+                  <td class="ta-r num">{{ t.jumlah_rekening }}</td>
+                  <td class="ta-r num">{{ formatRupiah(t.total_saldo) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+            <p v-else class="muted">Belum ada data nasabah prioritas.</p>
+          </div>
+          <div>
+            <h3>Laba/rugi per bulan</h3>
+            <div v-if="labaBars" class="chart-wrap">
+              <svg viewBox="0 0 300 180" role="img" aria-label="Diagram batang laba rugi per bulan">
+                <line class="l-zero" x1="0" :y1="labaBars.yZero" x2="300" :y2="labaBars.yZero" />
+                <g v-for="(b, bi) in labaBars.rows" :key="b.bulan" :style="{ '--i': bi }">
+                  <rect class="svg-bar" :class="b.neg ? 'neg s-down' : 's-up'" :x="b.x" :width="b.w" :y="b.ry" :height="b.h" rx="3">
+                    <title>{{ b.label }}: {{ formatRupiah(b.val) }}{{ b.neg ? ' (rugi)' : '' }}</title>
+                  </rect>
+                  <text class="svg-bar-val t-val" :class="b.neg ? 't-down' : 't-up'" :x="b.cx" :y="b.labelY" text-anchor="middle" font-size="11.5">{{ b.lab }}</text>
+                  <text class="svg-bar-x t-axis" :x="b.cx" y="172" text-anchor="middle" font-size="12">{{ b.label }}</text>
+                </g>
+              </svg>
+            </div>
+            <p v-else class="muted">Belum ada data laba/rugi 6 bulan terakhir.</p>
+            <p class="muted small">Setor dikurangi tarik, 6 bulan terakhir.</p>
+          </div>
+        </div>
+      </section>
+
+      <section v-else class="panel locked span-7">
+        <h2>Insight Nasabah Prioritas</h2>
+        <p class="muted">Login untuk melihat nasabah prioritas dan laba rugi per bulan. Data ini disembunyikan untuk tamu.</p>
+        <button class="btn" @click="router.push({ name: 'login', query: { redirect: '/' } })">Login untuk melihat</button>
+      </section>
     </div>
   </div>
 </template>

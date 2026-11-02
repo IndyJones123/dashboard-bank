@@ -133,7 +133,7 @@ export const liveMode = ref(false)
 
 const LIVE_DWELL = 4000       // halaman muat 1 layar: tunda sebelum ganti
 const LIVE_TAIL = 3000        // sesudah scroll ke bawah: tunda sebelum ganti
-const LIVE_SPEED = 120        // px/detik — kecepatan scroll "pelan"
+const LIVE_SPEED = 120        // px/detik: kecepatan scroll "pelan"
 const LIVE_SCROLL_MAX = 16000 // batas durasi scroll 1 halaman
 
 let liveGen = 0               // penanda generasi loop aktif

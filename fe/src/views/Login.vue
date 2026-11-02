@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '../stores/auth'
+import { bankLogo, bankName } from '../stores/branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,7 +19,7 @@ async function onSubmit(): Promise<void> {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.push(redirect)
   } catch {
-    error.value = 'Username atau password salah.'
+    error.value = 'Username atau password salah. Periksa kembali lalu coba lagi.'
   } finally {
     loading.value = false
   }
@@ -28,8 +29,9 @@ async function onSubmit(): Promise<void> {
 <template>
   <div class="login-wrap">
     <form class="login-card" @submit.prevent="onSubmit">
-      <h1>Login Bank</h1>
-      <p class="muted">Akun mock: admin/admin123 · user/user123</p>
+      <img v-if="bankLogo" class="login-logo" :src="bankLogo" :alt="`Logo ${bankName}`" />
+      <h1>Masuk ke {{ bankName }}</h1>
+      <p class="muted">Akun mock: admin/admin123 atau user/user123</p>
       <label>
         Username
         <input v-model="username" type="text" autocomplete="username" required />
@@ -38,7 +40,7 @@ async function onSubmit(): Promise<void> {
         Password
         <input v-model="password" type="password" autocomplete="current-password" required />
       </label>
-      <p v-if="error" class="alert">{{ error }}</p>
+      <p v-if="error" class="alert" role="alert">{{ error }}</p>
       <button class="btn" type="submit" :disabled="loading">
         {{ loading ? 'Memeriksa…' : 'Masuk' }}
       </button>

@@ -8,13 +8,12 @@
     <div class="page-head">
       <div>
         <h1>Likuiditas</h1>
-        <p class="muted small">Powered By IBA System</p>
       </div>
     </div>
     <section class="panel">
-      <p class="muted">
-        Halaman Likuiditas sedang disiapkan dan akan segera tersedia.
-      </p>
+      <h2>Segera tersedia</h2>
+      <p class="muted">Halaman ini sedang disiapkan. Sementara itu, posisi kas dan bank ada di Laporan Keuangan Harian.</p>
+      <RouterLink class="btn-ghost" :to="{ path: '/reports', query: { jenis: 'harian' } }">Buka Laporan Harian</RouterLink>
     </section>
   </div>
 </template>

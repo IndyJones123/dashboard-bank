@@ -91,7 +91,7 @@ const titleOf = (v: unknown): string | undefined =>
 </template>
 
 <style scoped>
-/* Aturan inti: isi sel TIDAK BOLEH wrap — 1 baris, sisanya gulir horizontal. */
+/* Aturan inti: isi sel TIDAK BOLEH wrap: 1 baris, sisanya gulir horizontal. */
 table th,
 table td {
   white-space: nowrap;
@@ -101,25 +101,24 @@ table td {
   align-items: center;
   gap: 0.55rem;
   margin-top: 0.55rem;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 .pager button {
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
-  color: var(--ink);
-  font-size: 0.95rem;
+  color: var(--primary);
+  font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
 }
-.pager button:hover:not(:disabled) { background: var(--surface-2); }
+.pager button:hover:not(:disabled) { border-color: var(--primary); }
 .pager button:disabled { opacity: 0.4; cursor: default; }
-.pager button:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
 .pg-info { font-variant-numeric: tabular-nums; }
 </style>

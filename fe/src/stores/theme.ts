@@ -4,7 +4,7 @@ import api from '../api'
 /* ==========================================================================
    Tema global (CMS palet fitlink): 9 token hex dari GET/PUT /api/theme
    diterapkan ke :root secara runtime (custom property). Var TURUNAN
-   (ring/soft/fill/deret rgba border) dihitung di sini — admin cukup memilih
+   (ring/soft/fill/deret rgba border) dihitung di sini: admin cukup memilih
    9 warna solid, konsistensi otomatis. Default = palet fitlink identik
    dgn :root fe/src/style.css (sumber kebenaran visual).
    ========================================================================== */
@@ -16,7 +16,7 @@ export const THEME_TOKENS = [
   { key: 'ink', label: 'Teks utama (ink)' },
   { key: 'muted', label: 'Teks muted' },
   { key: 'primary', label: 'Primary (brand)' },
-  { key: 'accent', label: 'Aksen (garis topbar)' },
+  { key: 'accent', label: 'Aksen (seri kedua grafik)' },
   { key: 'green', label: 'Hijau (positif)' },
   { key: 'red', label: 'Merah (risiko)' },
 ] as const
@@ -36,7 +36,7 @@ export const DEFAULT_THEME: ThemeTokens = {
   red: '#dc2626',
 }
 
-/** Preset "Navy legacy" — palet sebelum redesain fitlink (dari git HEAD). */
+/** Preset "Navy legacy": palet sebelum redesain fitlink (dari git HEAD). */
 export const LEGACY_THEME: ThemeTokens = {
   bg: '#f8fafc',
   surface: '#ffffff',
@@ -59,7 +59,7 @@ function rgba(hex: string, a: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
 }
 
-/** Gelapkan (f<0) / terangkan (f>0) hex solid — bahan var turunan. */
+/** Gelapkan (f<0) / terangkan (f>0) hex solid: bahan var turunan. */
 function shade(hex: string, f: number): string {
   const n = parseInt(hex.slice(1), 16)
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) =>
@@ -78,14 +78,15 @@ export function applyTheme(tokens: Partial<ThemeTokens>): void {
   // Turunan primary (gelap utk hover, tint/ring utk kontrol)
   root.style.setProperty('--primary-dark', shade(t.primary, -0.22))
   root.style.setProperty('--primary-10', rgba(t.primary, 0.1))
+  root.style.setProperty('--primary-40', rgba(t.primary, 0.4))
   root.style.setProperty('--primary-ring', rgba(t.primary, 0.3))
   // Turunan green/red (chip, fill batang, garis, focus di permukaan gelap)
   root.style.setProperty('--green-dark', shade(t.green, -0.55))
   root.style.setProperty('--green-fill', rgba(t.green, 0.85))
   root.style.setProperty('--green-soft', rgba(t.green, 0.12))
   root.style.setProperty('--green-line', rgba(t.green, 0.32))
-  root.style.setProperty('--focus-on-dark', t.green)
   root.style.setProperty('--red-bg', rgba(t.red, 0.1))
+  root.style.setProperty('--red-dark', shade(t.red, -0.2))
   // Turunan ink: teks + hairline struktural dari keluarga ink
   root.style.setProperty('--text', t.ink)
   root.style.setProperty('--border', rgba(t.ink, 0.08))
@@ -109,14 +110,14 @@ export async function loadTheme(): Promise<void> {
   }
 }
 
-/** Simpan tema global (admin) — server memvalidasi ulang & mengembalikan
+/** Simpan tema global (admin): server memvalidasi ulang & mengembalikan
     merged; bila sukses, terapkan hasil server (bukan draft lokal). */
 export async function saveTheme(tokens: ThemeTokens): Promise<void> {
   const { data } = await api.put('/api/theme', { tokens })
   if (data?.tokens) applyTheme(data.tokens as Partial<ThemeTokens>)
 }
 
-/** Kontras WCAG (ratio) antar2 hex — guard editor. */
+/** Kontras WCAG (ratio) antar2 hex: guard editor. */
 export function contrastRatio(a: string, b: string): number {
   const lum = (hex: string): number => {
     const n = parseInt(hex.slice(1), 16)

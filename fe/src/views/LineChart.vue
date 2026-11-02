@@ -26,7 +26,9 @@ const props = defineProps<{
   aria?: string
 }>()
 
-const W = 1040, H = 276, PADL = 56, PADR = 16, TOP = 16, BASE = 226
+const W = 1040, H = 290, PADL = 58, PADR = 34, TOP = 22, BASE = 250
+/* Lebar minimum sebelum chart digulir: 13 periode tetap terbaca di tablet */
+const MIN_W = 760
 
 /* Animasi gambar garis: clipPath kiri -> kanan (dari awal ke akhir bulan)
    saat data tampil. defs di-key agar re-mount saat data berganti -> animasi
@@ -41,8 +43,18 @@ const maxVal = computed(() => {
   return m || 1
 })
 
-/* Sumbu absolut (0..maks GLOBAL) — banding nilai antar seri apa adanya.
-   Toggle "skala indeks" dihapus: satu skala saja, tanpa dinormalisasi. */
+/* Skala: 'abs' = sumbu absolut (0..maks GLOBAL, banding NILAI antar seri);
+   'idx' = indeks per seri (0..100%, tiap garis dinormalisasi ke maksnya
+   sendiri) utk chart campuran magnitudo: seri kecil tidak "tidur" di garis
+   dasar (jebakan lama: 1 seri 24T + 1 seri 300M -> seri kecil = garis datar). */
+const mode = ref<'abs' | 'idx'>('abs')
+const perMax = computed(() =>
+  props.series.map((s) => {
+    let m = 0
+    for (const v of s.values) if (v != null && v > m) m = v
+    return m || 1
+  }),
+)
 
 const trim = (v: number): string => v.toFixed(v < 10 ? 1 : 0)
 const fmtAxis = (v: number): string => {
@@ -57,9 +69,10 @@ const ticks = computed(() => {
   const mx = maxVal.value
   const plotH = BASE - TOP
   // g=0 = garis dasar (bawah) -> label 0; g=4 (atas) -> label maks.
+  // Mode indeks: sumbu dlm persen (100% = puncak tiap seri).
   return [0, 1, 2, 3, 4].map((g) => ({
     y: BASE - (g * plotH) / 4,
-    label: fmtAxis((mx * g) / 4),
+    label: mode.value === 'idx' ? `${g * 25}%` : fmtAxis((mx * g) / 4),
   }))
 })
 
@@ -73,16 +86,16 @@ interface Drawn {
 }
 
 const drawn = computed<Drawn[]>(() =>
-  props.series.map((s) => {
-    const cap = maxVal.value
+  props.series.map((s, si) => {
+    const cap = mode.value === 'idx' ? perMax.value[si] : maxVal.value
     const segs: string[] = []
     const areas: string[] = []
     let cur: string[] = []
     const flush = () => {
       if (cur.length > 1) {
         segs.push(cur.join(' '))
-        // Area = segmen ditutup ke garis dasar; seri dash (pembanding) tanpa area
-        if (!s.dash) {
+        // Area hanya utk chart 1 seri: bertumpuk antar kantor mengaburkan garis
+        if (!s.dash && props.series.length === 1) {
           const x0 = cur[0].split(',')[0]
           const x1 = cur[cur.length - 1].split(',')[0]
           areas.push(`M${x0},${BASE} L${cur.join(' L')} L${x1},${BASE} Z`)
@@ -110,7 +123,7 @@ const drawn = computed<Drawn[]>(() =>
 <template>
   <div>
     <div class="chart-scroll">
-      <div class="chart-wrap lc" :style="{ width: `max(100%, ${W}px)` }">
+      <div class="chart-wrap lc" :style="{ width: `max(100%, ${MIN_W}px)` }">
         <svg :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="aria ?? 'Grafik garis laporan'">
           <!-- Clip animasi draw (kiri -> kanan); key = drawKey -> main ulang saat data ganti -->
           <defs :key="drawKey">
@@ -133,8 +146,8 @@ const drawn = computed<Drawn[]>(() =>
             </linearGradient>
           </defs>
           <g v-for="t in ticks" :key="t.y">
-            <line :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
-            <text :x="PADL - 8" :y="t.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ t.label }}</text>
+            <line class="l-grid" :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" />
+            <text class="t-axis" :x="PADL - 8" :y="t.y + 4" text-anchor="end" font-size="12">{{ t.label }}</text>
           </g>
           <g
             v-for="(s, si) in series"
@@ -165,27 +178,32 @@ const drawn = computed<Drawn[]>(() =>
               v-for="(p, pi) in drawn[si]?.pts ?? []"
               :key="pi"
               :cx="p.x" :cy="p.y" r="3.4"
-              :fill="s.color" stroke="#fff" stroke-width="1.2"
+              :fill="s.color" class="lc-dot"
             >
               <title>{{ p.title }}</title>
             </circle>
             <text
               v-for="(p, pi) in drawn[si]?.pts ?? []"
               :key="`v${pi}`"
-              :x="p.x" :y="p.y - 7" text-anchor="middle"
-              font-size="9" font-weight="700" fill="#0f172a"
+              class="t-val t-halo"
+              :x="p.x" :y="p.y - 8"
+              :text-anchor="p.x <= PADL + 1 ? 'start' : 'middle'"
+              font-size="11.5"
             >{{ fmtAxis(p.v) }}</text>
           </g>
-          <line :x1="PADL" :y1="BASE" :x2="W - PADR" :y2="BASE" stroke="rgba(15,23,42,0.35)" stroke-width="1" />
+          <line class="l-zero" :x1="PADL" :y1="BASE" :x2="W - PADR" :y2="BASE" />
           <text
             v-for="(lb, i) in labels"
             :key="lb + i"
-            :x="xAt(i)" :y="BASE + 20" text-anchor="middle" font-size="10" fill="#475569"
+            class="t-axis"
+            :x="xAt(i)" :y="BASE + 22"
+            text-anchor="middle"
+            font-size="12"
           >{{ lb }}</text>
         </svg>
       </div>
     </div>
-    <!-- Kaki chart: legend chip -->
+    <!-- Kaki chart: legend chip (kiri) + toggle skala (kanan) -->
     <div class="lc-foot">
       <ul class="lc-legend">
         <li v-for="s in series" :key="s.key">
@@ -195,7 +213,20 @@ const drawn = computed<Drawn[]>(() =>
           {{ s.label }}
         </li>
       </ul>
+      <div v-if="series.length > 1" class="segmented lc-scale" role="group" aria-label="Skala sumbu-Y">
+        <button type="button" :class="{ on: mode === 'abs' }" @click="mode = 'abs'">
+          Skala absolut
+        </button>
+        <button type="button" :class="{ on: mode === 'idx' }" @click="mode = 'idx'">
+          Skala indeks
+        </button>
+      </div>
     </div>
+    <p v-if="mode === 'idx'" class="note lc-note">
+      Skala indeks: tiap garis dihitung terhadap puncaknya sendiri (100% =
+      puncak garis itu), untuk membandingkan bentuk tren antar kantor yang
+      nilainya jauh berbeda. Label titik tetap menampilkan nilai rupiah asli.
+    </p>
   </div>
 </template>
 
@@ -220,30 +251,36 @@ const drawn = computed<Drawn[]>(() =>
 .lc-foot {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 0.6rem 1rem;
   flex-wrap: wrap;
   margin-top: 0.6rem;
 }
-/* Legend = chip berbingkai (bukan teks mentah). */
+.lc-scale {
+  flex: 0 0 auto;
+}
+.lc-note {
+  margin: 0.45rem 0 0;
+}
+/* Cincin surface di titik: garis tetap terpisah saat antar seri berimpit. */
+.lc-dot {
+  stroke: var(--surface);
+  stroke-width: 1.4;
+}
 .lc-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.25rem 1.1rem;
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
+  color: var(--muted-2);
 }
 .lc-legend li {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #334155;
   font-weight: 500;
 }
 </style>

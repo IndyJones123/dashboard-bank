@@ -280,6 +280,7 @@ Q_APP_SETTINGS_CREATE = "/* name:app_settings_create */\n" + _APP_SETTINGS_DDL
 
 Q_APP_SETTINGS_APPLY = "/* name:app_settings_apply */\n" + _APP_SETTINGS_DDL
 
+# Q_THEME_* generik per kkey: dipakai tema ('theme') dan nama bank ('bank_name').
 Q_THEME_GET = """
 /* name:theme_get */
 SELECT sval AS value
@@ -294,27 +295,6 @@ UPDATE app_settings SET sval = ? WHERE kkey = ?
 
 Q_THEME_INSERT = """
 /* name:theme_set */
-INSERT INTO app_settings (kkey, sval) VALUES (?, ?)
-"""
-
-# ---- Branding (CMS identitas bank): nama bank + icon + logo ---------------
-# Nilai = JSON {bank_name, icon, logo}; icon/logo = data URL base64 yang
-# disimpan DI MEMORI (mode mock: dict proses; mode live: kolom NVARCHAR(MAX)
-# app_settings) — tanpa S3/storage file, sesuai kebutuhan CMS.
-Q_BRANDING_GET = """
-/* name:branding_get */
-SELECT sval AS value
-FROM app_settings
-WHERE kkey = ?
-"""
-
-Q_BRANDING_UPDATE = """
-/* name:branding_set */
-UPDATE app_settings SET sval = ? WHERE kkey = ?
-"""
-
-Q_BRANDING_INSERT = """
-/* name:branding_set */
 INSERT INTO app_settings (kkey, sval) VALUES (?, ?)
 """
 
@@ -384,8 +364,8 @@ _MOCK_TOP_DEPOSITS = [
 ]
 
 _MOCK_PROFIT = [
-    {"bulan": m, "laba_bunga": round(f * 0.015, 2)}
-    for m, f in zip(_MONTHS, [x["setor"] for x in _MOCK_FLOW])
+    {"bulan": x["bulan"], "setor": x["setor"], "tarik": x["tarik"], "laba": x["setor"] - x["tarik"]}
+    for x in _MOCK_FLOW
 ]
 
 # ---------------------------------------------------------------------------
@@ -473,12 +453,9 @@ def mock_users() -> list[dict[str, Any]]:
     return [dict(u) for u in _MOCK_USERS]
 
 
-# Tema global di mock: hilang saat restart proses (semantik mock, default
-# fitlink yang dikembalikan app.py saat nilai kosong).
-_MOCK_THEME: dict[str, str] = {}
-
-# Branding (nama bank + icon/logo base64) di mock — juga in-memory proses.
-_MOCK_BRANDING: dict[str, str] = {}
+# app_settings di mock (per kkey: tema, nama bank): hilang saat restart proses
+# (semantik mock, default yang dikembalikan app.py saat nilai kosong).
+_MOCK_SETTINGS: dict[str, str] = {}
 
 
 def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
@@ -515,23 +492,18 @@ def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     if name == "piutang_golac":
         return _mock_piutang_golac(params)
     if name == "theme_get":
-        return [{"value": _MOCK_THEME["value"]}] if _MOCK_THEME.get("value") else []
-    if name == "branding_get":
-        return [{"value": _MOCK_BRANDING["value"]}] if _MOCK_BRANDING.get("value") else []
+        value = _MOCK_SETTINGS.get(str(params[0])) if params else None
+        return [{"value": value}] if value else []
 
     return []
 
 
 def mock_write(sql: str, params: tuple | list = ()) -> int:
-    tag = _tag(sql)
-    if tag == "theme_set":
-        # UPDATE (value, key) atau INSERT (key, value) — dua-duanya menyimpan
+    if _tag(sql) == "theme_set":
+        # UPDATE (value, key) atau INSERT (key, value): dua-duanya menyimpan per key
         p = list(params)
-        _MOCK_THEME["value"] = str(p[0] if "UPDATE" in sql.upper() else p[-1])
-        return 1
-    if tag == "branding_set":
-        p = list(params)
-        _MOCK_BRANDING["value"] = str(p[0] if "UPDATE" in sql.upper() else p[-1])
+        value, key = (p[0], p[1]) if "UPDATE" in sql.upper() else (p[1], p[0])
+        _MOCK_SETTINGS[str(key)] = str(value)
         return 1
     return 1
 

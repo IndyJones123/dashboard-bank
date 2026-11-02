@@ -43,7 +43,7 @@ const fmt = (r: LkhRow): string => {
 }
 
 /** Nilai kartu: placeholder saat loading / datanya null, persen utk NPF.
-    Rupiah disingkat (T/M/jt) — lihat formatRpSingkat. */
+    Rupiah disingkat (T/M/jt): lihat formatRpSingkat. */
 const cardVal = (v: number | null, pct = false): string => {
   if (loading.value || v == null || Number.isNaN(v)) return '–'
   return pct ? `${Number(v).toFixed(2)} %` : formatRpSingkat(v)
@@ -113,59 +113,55 @@ onMounted(() => {
 <template>
   <div>
     <!-- Filter laporan harian -->
-    <section class="panel">
-      <div class="toolbar">
-        <div class="filters">
-          <label>
-            Tanggal
-            <input v-model="tanggal" type="date" @change="load">
-          </label>
-          <label>
-            Kantor
-            <select v-model="kdloc" @change="load">
-              <option value="00">Semua Kantor</option>
-              <option v-for="o in offices.filter((v) => v !== '00')" :key="o" :value="o">Kantor {{ o }}</option>
-            </select>
-          </label>
-        </div>
-        <span v-if="loading" class="muted small">Memuat…</span>
+    <div class="toolbar report-filters">
+      <div class="filters">
+        <label>
+          Tanggal
+          <input v-model="tanggal" type="date" @change="load">
+        </label>
+        <label>
+          Kantor
+          <select v-model="kdloc" @change="load">
+            <option value="00">Semua Kantor</option>
+            <option v-for="o in offices.filter((v) => v !== '00')" :key="o" :value="o">Kantor {{ o }}</option>
+          </select>
+        </label>
       </div>
-    </section>
+      <span v-if="loading" class="muted small">Memuat laporan…</span>
+    </div>
 
-    <!-- Ringkasan posisi harian: nilai ringkas (T/M/jt) supaya tak overflow -->
-    <section class="cards sum">
-      <div class="card metric">
-        <span class="label">Kas</span>
-        <strong class="num" :title="cardFull(kas)">{{ cardVal(kas) }}</strong>
-        <span class="muted small">Posisi hari ini</span>
+    <!-- Ringkasan posisi harian: nilai ringkas (T/M/jt), hover = rupiah penuh -->
+    <section class="lead">
+      <div>
+        <p class="lead-label">Total OS Pokok</p>
+        <p class="lead-value num" :title="cardFull(totalOS)">{{ cardVal(totalOS) }}</p>
+        <p class="lead-note">Outstanding portofolio per {{ tanggalIndo }}</p>
       </div>
-      <div class="card metric">
-        <span class="label">Bank</span>
-        <strong class="num" :title="cardFull(bank)">{{ cardVal(bank) }}</strong>
-        <span class="muted small">Giro &amp; tabungan</span>
-      </div>
-      <div class="card metric">
-        <span class="label">Total OS Pokok</span>
-        <strong class="num" :title="cardFull(totalOS)">{{ cardVal(totalOS) }}</strong>
-        <span class="muted small">Outstanding portofolio</span>
-      </div>
-      <div class="card metric">
-        <span class="label">NPF OJK</span>
-        <strong class="num" :title="cardFull(npfOjk, true)">{{ cardVal(npfOjk, true) }}</strong>
-        <span class="muted small">Batas sehat &lt; 5%</span>
-      </div>
-      <div class="card metric">
-        <span class="label">Laba Bulan Berjalan</span>
-        <strong class="num" :title="cardFull(labaBerjalan)">{{ cardVal(labaBerjalan) }}</strong>
-        <span class="muted small">Rugi laba MTD</span>
-      </div>
+      <dl class="ledger">
+        <div>
+          <dt>Kas <small>Posisi hari ini</small></dt>
+          <dd class="num" :title="cardFull(kas)">{{ cardVal(kas) }}</dd>
+        </div>
+        <div>
+          <dt>Bank <small>Giro dan tabungan</small></dt>
+          <dd class="num" :title="cardFull(bank)">{{ cardVal(bank) }}</dd>
+        </div>
+        <div>
+          <dt>NPF OJK <small>Batas sehat di bawah 5%</small></dt>
+          <dd class="num" :title="cardFull(npfOjk, true)">{{ cardVal(npfOjk, true) }}</dd>
+        </div>
+        <div>
+          <dt>Laba Bulan Berjalan <small>Sejak awal bulan</small></dt>
+          <dd class="num" :title="cardFull(labaBerjalan)">{{ cardVal(labaBerjalan) }}</dd>
+        </div>
+      </dl>
     </section>
 
     <!-- Perincian: satu tabel berkelompok, tanggal format Indonesia -->
     <section class="panel">
       <h2>Perincian Laporan Keuangan Harian</h2>
       <p class="sub">
-        {{ tanggalIndo }} · Kantor {{ kdloc === '00' ? 'Semua Kantor' : `Kantor ${kdloc}` }}
+        {{ tanggalIndo }}, {{ kdloc === '00' ? 'semua kantor' : `Kantor ${kdloc}` }}
       </p>
       <p v-if="loading" class="muted">Memuat laporan harian…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
@@ -197,8 +193,8 @@ onMounted(() => {
           </table>
           </div>
           <p class="muted small note">
-            Sumber: Laporan-Keuangan-Harian.sql · NPL dalam Rupiah, NPF dalam persen ·
-            Filter kantor memengaruhi nilai konsolidasi (range kodeloc).
+            Sumber: Laporan-Keuangan-Harian.sql. NPL dalam rupiah, NPF dalam persen.
+            Filter kantor memengaruhi nilai konsolidasi.
           </p>
         </MoreDetails>
       </template>
@@ -207,21 +203,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Kartu ringkas: angka pendek + ruang lebih rapat, tetap 1 baris di lebar kecil */
-.sum { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
-.sum .card { padding: 0.55rem 0.8rem; gap: 0.2rem; }
-.sum .card.metric strong { font-size: 1.55rem; line-height: 1.2; white-space: nowrap; }
-.sum .card .small { font-size: 0.85rem; }
-
 /* Perincian: header grup jadi pembatas bagian (tanpa 6 tabel terpisah) */
 .harian .grp td {
   background: var(--surface-2);
-  border-left: 3px solid var(--primary);
   color: var(--ink);
-  font-size: 0.9rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   padding-top: 0.5rem;
   padding-bottom: 0.5rem;
 }

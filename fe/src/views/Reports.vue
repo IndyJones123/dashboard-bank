@@ -7,7 +7,7 @@ import ReportsDpk from './ReportsDpk.vue'
 import ReportsPiutang from './ReportsPiutang.vue'
 import MoreDetails from './MoreDetails.vue'
 import Sparkline from './Sparkline.vue'
-import { formatRpSingkat, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
+import { formatRpSingkat, kantorColor, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
 import { slideTransition } from '../stores/present'
 
 /* ==========================================================================
@@ -86,6 +86,16 @@ function apiErrText(e: unknown, fallback: string): string {
 }
 
 const glKindLabel: Record<string, string> = REPORT_KIND_LABELS
+
+/** Label tab = label laporan tanpa kata "Laporan" (sudah jelas dari halaman). */
+const tabLabel = (k: string): string => REPORT_KIND_LABELS[k].replace(/^Laporan /, '')
+const REPORT_INTRO: Record<string, string> = {
+  aset: 'Posisi aset konsolidasi dan rincian per kantor.',
+  labarugi: 'Laba rugi konsolidasi dan rincian per kantor.',
+  harian: 'Posisi kas, bank, pembiayaan, dan laba rugi pada tanggal terpilih.',
+  dpk: 'Dana pihak ketiga per produk dan kantor.',
+  piutang: 'Posisi piutang per golongan dan kantor.',
+}
 
 /** Jenis GL pakai filter/tampilan global halaman ini; selain itu tampil di child. */
 const isGl = computed(() => glKind.value === 'aset' || glKind.value === 'labarugi')
@@ -233,8 +243,6 @@ const glKantorTable = computed(() =>
    Geometri: viewBox 960×340, plot x 64..944 / y 16..304, skala DARI NOL
    (komparasi jujur antar kantor; berbeda dgn bar code.html yang zoom).
    ========================================================================== */
-const DIAG_COLORS = ['#22C55E', '#1E5FA3', '#D97706', '#0284C7', '#7C3AED', '#E11D48', '#0D9488', '#DB2777']
-
 // null = belum pernah dipilih -> default SEMUA kantor tampil
 const glCompare = ref<string[] | null>(null)
 const glKantors = computed(() =>
@@ -245,9 +253,9 @@ const glCompareSel = computed(() =>
     ? glKantors.value
     : glCompare.value.filter((k) => glKantors.value.includes(k)),
 )
+/** Warna = kantor, sama persis dgn grafik DPK & Piutang (palet bersama). */
 function diagColor(kdloc: string): string {
-  const i = glKantors.value.indexOf(kdloc)
-  return DIAG_COLORS[(i >= 0 ? i : 0) % DIAG_COLORS.length]
+  return kantorColor(kdloc, glKantors.value)
 }
 function toggleCompare(k: string): void {
   const cur = [...glCompareSel.value]
@@ -261,11 +269,6 @@ function allCompare(): void {
 }
 function noneCompare(): void {
   glCompare.value = []
-}
-
-/** Tutup dropdown <details> kantor setelah opsi diklik. */
-function closeKantorDd(e: MouseEvent): void {
-  ;(e.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
 }
 
 interface DiagPt {
@@ -404,7 +407,7 @@ const glTotalLabel = computed(() =>
   glIsArus.value ? `Total ${glGranular.value} ${glEndYear.value}` : `Posisi akhir ${glEndYear.value}`,
 )
 /** Deret utk sparkline kartu metrik GL: saldo konsolidasi per baris chart
-    (periode & sumber = grafik menu 1 — tanpa angka rekaan). */
+    (periode & sumber = grafik menu 1: tanpa angka rekaan). */
 const glTotalSeries = computed<(number | null)[]>(() =>
   glChartRows.value.map((r) => r.saldo),
 )
@@ -440,6 +443,33 @@ function glBarLabel(v: number): string {
   const n = (v / glScale.value).toLocaleString('id-ID', { maximumFractionDigits: 1 })
   return `${n} ${glSuffix.value}`
 }
+
+/* Geometri bar SVG (laba rugi / tahunan): satu sumber koordinat utk batang
+   dan labelnya. Lebar viewBox mengikuti panel laporan yang lebar. */
+const GB = { W: 1040, H: 300, L: 64, R: 1030, T: 26, B: 264 }
+const glSvgGrid = computed(() =>
+  [0, 1, 2, 3, 4].map((g) => ({
+    y: GB.T + (g * (GB.B - GB.T)) / 4,
+    label: `${((glMax.value * (4 - g)) / 4 / glScale.value).toFixed(1)}${glSuffix.value}`,
+  })),
+)
+const glSvgBars = computed(() => {
+  const rows = glChartRows.value
+  const slot = (GB.R - GB.L) / Math.max(1, rows.length)
+  const w = Math.max(4, Math.min(72, slot - 12))
+  return rows.map((r, i) => {
+    const h = Math.max(3, (r.saldo / glMax.value) * (GB.B - GB.T))
+    return {
+      r,
+      key: `${r.kdloc ?? 'all'}-${r.thn}-${r.bln}`,
+      x: GB.L + i * slot + (slot - w) / 2,
+      cx: GB.L + i * slot + slot / 2,
+      y: GB.B - h,
+      w,
+      h,
+    }
+  })
+})
 
 interface GlBar {
   key: string
@@ -554,28 +584,27 @@ onMounted(async () => {
     <div :key="glKind" class="page-slide">
     <div class="page-head">
       <div>
-        <h1>Laporan Keuangan</h1>
-        <p class="muted small">
-          Powered By IBA System
-        </p>
+        <h1>{{ glTitle }}</h1>
+        <p>{{ REPORT_INTRO[glKind] }}</p>
       </div>
     </div>
 
-    <!-- Filter global: Jenis (2) + Tahun (bulanan) / range Dari–s.d. (tahunan)
-         + granularitas; Kantor ada di menu 2 -->
-    <section class="panel">
-      <div class="toolbar">
+    <!-- Jenis laporan: tab menulis ?jenis lewat glKind (sama spt deck Present) -->
+    <nav class="report-tabs" aria-label="Jenis laporan">
+      <button
+        v-for="k in REPORT_KINDS"
+        :key="k"
+        type="button"
+        :class="{ on: glKind === k }"
+        :aria-current="glKind === k ? 'page' : undefined"
+        @click="glKind = k"
+      >{{ tabLabel(k) }}</button>
+    </nav>
+
+    <!-- Filter GL: Tahun (bulanan) / range Dari–s.d. (tahunan) + granularitas;
+         Kantor ada di menu 2; laporan lain punya filter di komponennya -->
+    <div v-if="isGl" class="toolbar report-filters">
         <div class="filters">
-          <label>
-            Jenis
-            <select v-model="glKind">
-              <option value="aset">Laporan Aset</option>
-              <option value="labarugi">Laporan Laba Rugi</option>
-              <option value="harian">Laporan Keuangan Harian</option>
-              <option value="dpk">Laporan DPK</option>
-              <option value="piutang">Laporan Piutang</option>
-            </select>
-          </label>
           <label v-if="isGl && glGranular === 'bulanan'">
             Tahun
             <select v-model="glTahun" @change="loadGl">
@@ -602,7 +631,7 @@ onMounted(async () => {
           </label>
         </div>
 
-        <div v-if="isGl" class="segmented" role="group" aria-label="Granularitas laporan">
+        <div class="segmented" role="group" aria-label="Granularitas laporan">
           <button type="button" :class="{ on: glGranular === 'bulanan' }" @click="setGran('bulanan')">
             Bulanan
           </button>
@@ -610,67 +639,47 @@ onMounted(async () => {
             Tahunan
           </button>
         </div>
-      </div>
-    </section>
+    </div>
 
-    <!-- Metric callouts: angka dari menu 1 (konsolidasi semua cabang) -->
+    <!-- Angka utama: dari menu 1 (konsolidasi semua cabang) -->
     <template v-if="isGl">
-    <section class="cards">
-      <div class="card metric">
-        <span class="label">{{ glTotalLabel }}</span>
-        <strong class="num">{{ glLoading ? '–' : formatRupiah(glTotal) }}</strong>
-        <span v-if="glLastDelta !== null" :class="['chip', glLastDelta >= 0 ? 'up' : 'down']">
-          <i class="dot" aria-hidden="true" />
-          {{ glLastDelta >= 0 ? '+' : '' }}{{ glLastDelta.toFixed(1) }}%
-          {{ glGranular === 'bulanan' ? 'MoM' : 'YoY' }}
-        </span>
-        <span v-else class="chip neutral">
-          <i class="dot" aria-hidden="true" />
-          {{ glIsArus ? 'Arus periode berjalan' : 'Posisi stok' }}
-        </span>
+    <section class="lead">
+      <div>
+        <p class="lead-label">{{ glTotalLabel }}</p>
+        <p class="lead-value num">{{ glLoading ? '–' : formatRupiah(glTotal) }}</p>
+        <p class="lead-note">
+          <span v-if="glLastDelta !== null" :class="['chip', glLastDelta >= 0 ? 'up' : 'down']">
+            {{ glLastDelta >= 0 ? '▲ +' : '▼ ' }}{{ glLastDelta.toFixed(1) }}%
+            {{ glGranular === 'bulanan' ? 'dari bulan lalu' : 'dari tahun lalu' }}
+          </span>
+          <span v-else class="chip neutral">{{ glIsArus ? 'Arus periode berjalan' : 'Posisi stok' }}</span>
+          Konsolidasi semua cabang, {{ glPeriodText }}
+        </p>
+      </div>
+      <div class="lead-spark">
         <Sparkline
           v-if="!glLoading && !glError && glTotalSeries.length > 1"
           :values="glTotalSeries"
           :aria-label="`Tren ${glTotalLabel} per periode`"
         />
       </div>
-      <div class="card metric">
-        <span class="label">Jenis Laporan</span>
-        <span class="value-md">{{ glTitle }}</span>
-        <span class="muted small">
-          Konsolidasi semua cabang · Per kantor: {{ glKdloc === '00' ? 'semua' : glKdloc }}
-        </span>
-      </div>
-      <div class="card metric">
-        <span class="label">Periode</span>
-        <strong class="num">{{ glPeriodText }}</strong>
-        <span class="muted small">
-          {{ glGranular === 'bulanan' ? 'Tampilan bulanan' : 'Rekap tahunan' }} ·
-          {{ glKonsRows.length }} baris
-        </span>
-      </div>
     </section>
 
     <!-- ================= MENU 1: KONSOLIDASI SEMUA CABANG ================= -->
     <section class="panel">
-      <h2>{{ glTitle }}: Konsolidasi Semua Cabang</h2>
+      <h2>Konsolidasi Semua Cabang</h2>
       <p class="sub">
-        {{ glTotalLabel }}: <strong class="num">{{ glLoading ? 'Memuat…' : formatRupiah(glTotal) }}</strong>
-        · {{ glChartRows.length }} baris grafik
-        <span v-if="glLastDelta !== null" :class="['delta', glLastDelta >= 0 ? 'up' : 'down']">
-          {{ glLastDelta >= 0 ? '▲' : '▼' }} {{ Math.abs(glLastDelta).toFixed(1) }}%
-          {{ glGranular === 'bulanan' ? 'MoM' : 'YoY' }}
-        </span>
+        {{ glGranular === 'bulanan' ? 'Per bulan' : 'Per tahun' }}, {{ glPeriodText }}
       </p>
-      <p v-if="glLoading" class="muted">Memuat data GL…</p>
+      <p v-if="glLoading" class="muted">Memuat data konsolidasi…</p>
       <p v-else-if="glError" class="alert">{{ glError }}</p>
       <p v-else-if="!glChartRows.length" class="muted">
-        Tidak ada baris untuk filter ini. Ubah filter tahun / granularitas.
+        Tidak ada data untuk filter ini. Ubah tahun atau pilih Bulanan/Tahunan.
       </p>
       <!-- Aset bulanan: bar DOM mengikuti code.html (baseline + Q1–Q4) -->
       <div v-else-if="glBars.list.length" class="chart-dom">
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #22c55e" />Posisi {{ glTahun }} (T)</span>
+          <span><i class="swatch s-primary" />Posisi {{ glTahun }} ({{ glSuffix }})</span>
           <span v-if="glBaseline">
             <i class="swatch dashed" aria-hidden="true" />Baseline {{ glBaseline.thn }} ({{ glCompact(glBaseline.saldo) }})
           </span>
@@ -690,7 +699,7 @@ onMounted(async () => {
               :class="b.kind"
               :style="{ '--i': bi }"
             >
-              <span class="bar-val">{{ b.v }}</span>
+              <span class="bar-val num">{{ b.v }}</span>
               <div class="bar-fill" :style="{ height: b.h + '%' }" />
               <span class="bar-x">{{ b.x }}</span>
             </div>
@@ -708,61 +717,31 @@ onMounted(async () => {
       </div>
 
       <div v-else class="chart-wrap">
-        <svg viewBox="0 0 560 260" role="img" :aria-label="`Grafik ${glTitle} ${glPeriodText}`">
-          <defs>
-            <linearGradient id="glBarGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#22c55e" stop-opacity="1" />
-              <stop offset="100%" stop-color="#22c55e" stop-opacity="0.35" />
-            </linearGradient>
-          </defs>
-          <g v-for="g in [0, 1, 2, 3, 4]" :key="g">
-            <line x1="44" :y1="20 + g * 50" x2="550" :y2="20 + g * 50" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
-            <text x="38" :y="24 + g * 50" text-anchor="end" font-size="10" fill="#475569">
-              {{ (glMax * (4 - g) / 4 / glScale).toFixed(1) }}{{ glSuffix }}
-            </text>
+        <svg :viewBox="`0 0 ${GB.W} ${GB.H}`" role="img" :aria-label="`Grafik ${glTitle} ${glPeriodText}`">
+          <g v-for="g in glSvgGrid" :key="g.y">
+            <line class="l-grid" :x1="GB.L" :y1="g.y" :x2="GB.R" :y2="g.y" />
+            <text class="t-axis" :x="GB.L - 8" :y="g.y + 4" text-anchor="end" font-size="12">{{ g.label }}</text>
           </g>
-          <g
-            v-for="(r, i) in glChartRows"
-            :key="`${r.kdloc ?? 'all'}-${r.thn}-${r.bln}`"
-            :style="{ '--i': i }"
-          >
-            <rect
-              data-bar
-              class="svg-bar"
-              :x="60 + i * (480 / Math.max(1, glChartRows.length))"
-              :width="Math.max(4, 480 / Math.max(1, glChartRows.length) - 6)"
-              :y="220 - (r.saldo / glMax) * 190"
-              :height="Math.max(3, (r.saldo / glMax) * 190)"
-              rx="3"
-              fill="url(#glBarGrad)"
-            >
-              <title>{{ glPeriodLabel(r) }}: {{ formatRupiah(r.saldo) }}</title>
+          <g v-for="(b, i) in glSvgBars" :key="b.key" :style="{ '--i': i }">
+            <rect data-bar class="svg-bar s1" :x="b.x" :width="b.w" :y="b.y" :height="b.h" rx="4">
+              <title>{{ glPeriodLabel(b.r) }}: {{ formatRupiah(b.r.saldo) }}</title>
             </rect>
             <text
               v-if="glChartRows.length <= 13"
-              class="svg-bar-val"
-              :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
-              :y="220 - (r.saldo / glMax) * 190 - 4"
-              text-anchor="middle"
-              font-size="9"
-              font-weight="700"
-              fill="#0f172a"
-            >{{ glBarLabel(r.saldo) }}</text>
+              class="svg-bar-val t-val"
+              :x="b.cx" :y="b.y - 6"
+              text-anchor="middle" font-size="12.5"
+            >{{ glBarLabel(b.r.saldo) }}</text>
             <text
               v-if="glChartRows.length <= 13"
-              class="svg-bar-x"
-              :x="60 + i * (480 / Math.max(1, glChartRows.length)) + (480 / Math.max(1, glChartRows.length) - 6) / 2"
-              y="238"
-              text-anchor="middle"
-              font-size="10"
-              fill="#475569"
-            >
-              {{ glGranular === 'tahunan' ? r.thn : shortMonth(r.bln) }}
-            </text>
+              class="svg-bar-x t-axis"
+              :x="b.cx" :y="GB.B + 22"
+              text-anchor="middle" font-size="12.5"
+            >{{ glGranular === 'tahunan' ? b.r.thn : shortMonth(b.r.bln) }}</text>
           </g>
         </svg>
         <div class="chart-legend">
-          <span><i class="swatch" style="background: #22c55e" />{{ glTitle }}: {{ glPeriodText }}</span>
+          <span><i class="swatch s-primary" />{{ glTitle }}, {{ glPeriodText }}</span>
         </div>
       </div>
 
@@ -813,11 +792,19 @@ onMounted(async () => {
     <section class="panel">
       <div class="toolbar">
         <div>
-          <h2>{{ glTitle }}: Rincian per Kantor</h2>
+          <h2>Rincian per Kantor</h2>
+        </div>
+        <div class="filters">
+          <label>
+            Kantor
+            <select v-model="glKdloc">
+              <option v-for="k in glOffices" :key="k" :value="k">{{ k === '00' ? '00 (Semua)' : k }}</option>
+            </select>
+          </label>
         </div>
       </div>
 
-      <p v-if="glLoading" class="muted">Memuat data GL…</p>
+      <p v-if="glLoading" class="muted">Memuat data per kantor…</p>
       <p v-else-if="glError" class="alert">{{ glError }}</p>
       <p v-else-if="!glKantorTable.length" class="muted">Belum ada data untuk filter ini. Coba ganti tahun, rentang tanggal, atau kantor.</p>
 
@@ -826,35 +813,31 @@ onMounted(async () => {
       <div v-if="!glLoading && !glError && glKantors.length" class="compare">
         <div class="compare-head">
           <div>
-            <h3>Diagram Komparasi Antar Lokasi</h3>
+            <h3>Komparasi Antar Lokasi</h3>
             <p class="muted small">
-              Pilih Lokasi untuk ditampilkan bersamaan dalam 1 diagram garis,
-              tiap Lokasi memiliki warna garis sendiri. Sumbu-X mengikuti filter periode
-              di atas: bulan (Bulanan) atau tahun dalam range (Tahunan).
+              Pilih lokasi untuk dibandingkan. Tiap lokasi punya warna garis sendiri,
+              dan periodenya mengikuti filter di atas.
             </p>
           </div>
           <div class="compare-actions">
-            <button type="button" @click="allCompare">Pilih semua</button>
-            <button type="button" @click="noneCompare">Kosongkan</button>
+            <button type="button" class="btn-ghost" @click="allCompare">Pilih semua</button>
+            <button type="button" class="btn-ghost" @click="noneCompare">Kosongkan</button>
           </div>
         </div>
 
-        <div class="compare-select">
-          <details class="kantor-dd">
-            <summary>
-              Pilih Lokasi ({{ glCompareSel.length }})
-              <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-            </summary>
-            <div class="kantor-dd-menu" role="group" aria-label="Pilih BPRS untuk diagram komparasi">
-              <label v-for="k in glKantors" :key="k" class="kantor-dd-item">
-                <input type="checkbox" :checked="glCompareSel.includes(k)" @change="toggleCompare(k)" />
-                <i class="swatch" :style="{ background: diagColor(k) }" aria-hidden="true" />
-                BPRS {{ k }}
-              </label>
-            </div>
-          </details>
+        <div class="compare-chips" role="group" aria-label="Pilih BPRS untuk diagram komparasi">
+          <button
+            v-for="k in glKantors"
+            :key="k"
+            type="button"
+            class="compare-chip"
+            :class="{ on: glCompareSel.includes(k) }"
+            :aria-pressed="glCompareSel.includes(k)"
+            @click="toggleCompare(k)"
+          >
+            <i class="swatch" :style="{ background: diagColor(k) }" aria-hidden="true" />
+            {{ k }}
+          </button>
         </div>
 
         <div v-if="glDiag" class="chart-wrap diag">
@@ -866,11 +849,14 @@ onMounted(async () => {
               </clipPath>
             </defs>
             <g v-for="g in glDiag.grid" :key="g.y">
-              <line x1="64" :y1="g.y" x2="944" :y2="g.y" stroke="rgba(15,23,42,0.10)" stroke-width="1" />
-              <text x="58" :y="g.y + 3.5" text-anchor="end" font-size="10" fill="#475569">{{ g.label }}</text>
+              <line class="l-grid" x1="64" :y1="g.y" x2="944" :y2="g.y" />
+              <text class="t-axis" x="58" :y="g.y + 4" text-anchor="end" font-size="12">{{ g.label }}</text>
             </g>
-            <g v-for="t in glDiag.xTicks" :key="t.x">
-              <text :x="t.x" y="326" text-anchor="middle" font-size="10" fill="#475569">{{ t.label }}</text>
+            <g v-for="(t, ti) in glDiag.xTicks" :key="t.x">
+              <text
+                class="t-axis" :x="t.x" y="328" font-size="12"
+                :text-anchor="ti === 0 ? 'start' : ti === glDiag.xTicks.length - 1 ? 'end' : 'middle'"
+              >{{ t.label }}</text>
             </g>
             <g
               v-for="l in glDiag.lines"
@@ -887,19 +873,14 @@ onMounted(async () => {
               />
               <g v-for="(p, pi) in l.pts" :key="`${l.kdloc}-${p.label}`">
                 <circle :cx="p.x" :cy="p.y" r="3" :fill="l.color">
-                  <title>BPRS {{ l.kdloc }} · {{ p.label }}: {{ formatRupiah(p.saldo) }}</title>
+                  <title>BPRS {{ l.kdloc }}, {{ p.label }}: {{ formatRupiah(p.saldo) }}</title>
                 </circle>
-                <!-- Nilai hanya di titik awal & akhir (hindari tumpang tindih
-                     antar titik rapat); nilai per titik tetap via hover <title>.
-                     Titik awal digeser kanan, akhir digeser kiri: bebas dari
-                     label sumbu-Y di tepi kiri & tepi kanan area plot. -->
+                <!-- Nilai terlihat di atas tiap titik (halo surface biar kebaca di atas garis) -->
                 <text
-                  v-if="pi === 0 || pi === l.pts.length - 1"
-                  :x="pi === 0 ? p.x + 8 : p.x - 8" :y="p.y - 7"
-                  :text-anchor="pi === 0 ? 'start' : 'end'"
-                  font-size="9" font-weight="700" fill="#0f172a"
-                  stroke="#fff" stroke-width="2.5" paint-order="stroke"
-                  style="pointer-events: none"
+                  class="t-val t-halo"
+                  :x="p.x" :y="p.y - 8"
+                  :text-anchor="pi === 0 ? 'start' : pi === l.pts.length - 1 ? 'end' : 'middle'"
+                  font-size="11.5"
                 >{{ glDiagLabel(p.saldo) }}</text>
               </g>
             </g>
@@ -917,31 +898,6 @@ onMounted(async () => {
       <!-- Data terperinci per kantor: tersembunyi default, tombol More details -->
       <template v-if="!glLoading && !glError && glKantorTable.length">
         <MoreDetails id="det-gl-kantor" :open="glDetKantor" @toggle="glDetKantor = !glDetKantor">
-        <!-- Filter Kantor gaya dropdown "Pilih Lokasi": tampil hanya saat
-             panel More details terbuka (ikut <slot> di dalam details-body). -->
-        <div class="table-filter">
-          <details class="kantor-dd">
-            <summary>
-              Kantor: {{ glKdloc === '00' ? 'Semua' : glKdloc }}
-              <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-            </summary>
-            <div class="kantor-dd-menu" role="group" aria-label="Pilih kantor tabel detail">
-              <button
-                v-for="k in glOffices"
-                :key="k"
-                type="button"
-                class="kantor-dd-item"
-                :class="{ on: glKdloc === k }"
-                @click="glKdloc = k; closeKantorDd($event)"
-              >
-                <i class="check" aria-hidden="true">{{ glKdloc === k ? '✓' : '' }}</i>
-                {{ k === '00' ? 'Semua' : `BPRS ${k}` }}
-              </button>
-            </div>
-          </details>
-        </div>
         <div class="table-scroll">
           <table>
           <thead>

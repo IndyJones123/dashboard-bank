@@ -4,7 +4,7 @@ import { computed, useId } from 'vue'
 /* ==========================================================================
    Sparkline: garis tren mini utk kartu metrik (gaya fitlink.id).
    ATURAN: hanya dipakai bila deret data ASLI tersedia (mis. jumlah saldo
-   per periode dari baris yg sama dgn grafik/tabel). Tanpa sumbu/label —
+   per periode dari baris yg sama dgn grafik/tabel). Tanpa sumbu/label :
    nilai penuh tetap di grafik utama & tabel. Tanpa data (<2 titik) = kosong.
    ========================================================================== */
 const props = defineProps<{
@@ -34,7 +34,7 @@ const pts = computed<{ x: number; y: number }[] | null>(() => {
 })
 
 const line = computed(() => (pts.value ? pts.value.map((p) => `${p.x},${p.y}`).join(' ') : ''))
-/* Area di bawah garis (gradient ke transparan) — sentuhan fitlink. */
+/* Area di bawah garis (gradient ke transparan): sentuhan fitlink. */
 const area = computed(() => {
   const p = pts.value
   if (!p || p.length < 2) return ''
@@ -74,7 +74,6 @@ const area = computed(() => {
 .spark {
   display: block;
   width: 100%;
-  height: 30px;
-  margin-top: 0.45rem;
+  height: var(--spark-h, 30px);
 }
 </style>

@@ -34,10 +34,11 @@ export const REPORT_KIND_LABELS: Record<string, string> = {
   piutang: 'Laporan Piutang',
 }
 
-/** Palet warna kantor utk chart, cukup kontras di kedua tema (bukan text-500). */
+/** Palet warna kantor utk chart: data encoding, bukan warna tema, jadi sengaja
+    lepas dari token CMS. Divalidasi skrip dataviz (CVD & normal-vision ΔE lulus);
+    merah/hijau murni dihindari karena dipakai untuk status. */
 export const KANTOR_PALETTE = [
-  '#1e5fa3', '#2563eb', '#059669', '#b45309', '#7c3aed',
-  '#dc2626', '#0891b2', '#be185d', '#4d7c0f',
+  '#1e5fa3', '#c2710c', '#0f9488', '#8b5cc9', '#c03f7a', '#5f8f1e', '#2f9fd6',
 ]
 
 /** Warna kantor dari daftar kdloc terurut (indentik antar laporan). */

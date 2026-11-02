@@ -2,72 +2,64 @@ import { ref } from 'vue'
 import api from '../api'
 
 /* ==========================================================================
-   Branding (CMS identitas bank): nama bank + icon (favicon) + logo.
-   Sumber: GET/PUT /api/branding — gambar dikirim sebagai data URL base64
-   dan disimpan DI MEMORI BE (tanpa S3/storage). Reaktif: perubahan via CMS
-   langsung mengubah brand navbar, judul tab, dan favicon tanpa reload.
+   Identitas bank global (CMS): nama, logo, favicon. GET /api/branding,
+   disimpan di app_settings. Logo/favicon = data URL, kosong = gambar bawaan.
+   Dipakai sidebar, bar atas mobile, halaman login, dan tab browser.
+   BE mati -> nilai default, aplikasi tetap terbuka.
    ========================================================================== */
 
-export const bankName = ref('BankDash')
-export const iconUrl = ref<string | null>(null) // data URL custom; null = /favicon.svg
-export const logoUrl = ref<string | null>(null) // data URL custom; null = brand SVG bawaan
+export const DEFAULT_BANK_NAME = 'BankDash'
+export const BANK_NAME_MAX = 60
+export const DEFAULT_FAVICON = '/favicon.svg'
 
-const SITE_TAGLINE = 'Treasury Command'
+export type BrandImageKind = 'logo' | 'favicon'
 
-/** Terapkan judul tab: "<nama bank> — Treasury Command". */
-function applyTitle(): void {
-  document.title = `${bankName.value} — ${SITE_TAGLINE}`
+export const bankName = ref(DEFAULT_BANK_NAME)
+export const bankLogo = ref('')
+export const bankFavicon = ref('')
+
+function applyBankName(name: string): void {
+  bankName.value = name
+  document.title = `${name}: Treasury Command`
 }
 
-/** Ganti <link rel="icon"> ke data URL custom, atau kembali ke favicon.svg. */
-function applyFavicon(): void {
-  let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']")
-  if (!link) {
-    link = document.createElement('link')
-    link.rel = 'icon'
-    document.head.appendChild(link)
-  }
-  if (iconUrl.value) {
-    const semi = iconUrl.value.indexOf(';')
-    link.href = iconUrl.value
-    link.type = semi > 5 ? iconUrl.value.slice(5, semi) : 'image/png'
-  } else {
-    link.href = '/favicon.svg'
-    link.type = 'image/svg+xml'
-  }
+function applyLogo(url: string): void {
+  bankLogo.value = url
 }
 
-/** Terapkan branding ke state + dokumen (judul tab & favicon). */
-export function applyBranding(b: { bank_name: string; icon: string | null; logo: string | null }): void {
-  bankName.value = b.bank_name || 'BankDash'
-  iconUrl.value = b.icon || null
-  logoUrl.value = b.logo || null
-  applyTitle()
-  applyFavicon()
+function applyFavicon(url: string): void {
+  bankFavicon.value = url
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+  if (!link) return
+  link.href = url || DEFAULT_FAVICON
+  // Tipe bawaan index.html (svg) tidak berlaku lagi untuk file unggahan
+  if (url) link.removeAttribute('type')
+  else link.type = 'image/svg+xml'
 }
 
-/** Muat branding saat boot (sebelum mount — hindari kilatan judul default).
-    Gagal (BE mati) = diam-diam pakai default BankDash. */
+/** Muat identitas bank saat boot (publik; gagal -> default). */
 export async function loadBranding(): Promise<void> {
   try {
     const { data } = await api.get('/api/branding')
-    applyBranding({
-      bank_name: String(data?.bank_name || 'BankDash'),
-      icon: typeof data?.icon === 'string' ? data.icon : null,
-      logo: typeof data?.logo === 'string' ? data.logo : null,
-    })
+    if (data?.bank_name) applyBankName(String(data.bank_name))
+    applyLogo(data?.logo ? String(data.logo) : '')
+    applyFavicon(data?.favicon ? String(data.favicon) : '')
   } catch {
-    applyTitle()
-    applyFavicon()
+    /* BE mati / jaringan: nilai default tetap berlaku */
   }
 }
 
-/** Simpan identitas (admin) lalu terapkan langsung ke halaman ini. */
-export async function saveBranding(b: {
-  bank_name: string
-  icon: string | null
-  logo: string | null
-}): Promise<void> {
-  await api.put('/api/branding', b)
-  applyBranding(b)
+/** Simpan nama bank (admin); terapkan hasil server, bukan input lokal. */
+export async function saveBankName(name: string): Promise<void> {
+  const { data } = await api.put('/api/branding', { bank_name: name })
+  if (data?.bank_name) applyBankName(String(data.bank_name))
+}
+
+/** Simpan logo/favicon (admin); dataUrl kosong = hapus, kembali ke bawaan.
+    Terapkan hasil server: server menyusun ulang data URL dari isi file. */
+export async function saveBrandImage(kind: BrandImageKind, dataUrl: string): Promise<void> {
+  const { data } = await api.put('/api/branding/image', { kind, data_url: dataUrl })
+  const url = data?.data_url ? String(data.data_url) : ''
+  if (kind === 'logo') applyLogo(url)
+  else applyFavicon(url)
 }

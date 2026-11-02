@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { currentUser, isAdmin, isLoggedIn, logout } from './stores/auth'
-import { bankName, logoUrl } from './stores/branding'
+import { bankLogo, bankName } from './stores/branding'
 import {
   enterPresent, exitPresent, isPresent,
   PRESENT_SLIDES, slideIdx, slideTitle, slideTransition,
@@ -14,12 +14,15 @@ import {
 const router = useRouter()
 const route = useRoute()
 
-/* Konteks kanan navbar: badge Live (dot berkedip) + tanggal ringkas.
-   Ucapan sapa ("Selamat siang, Budi Santoso") DIHAPUS; tanggal lengkap di
-   sidebar juga dihapus — Live + tanggal ringkas cukup di navbar. */
-const topContext = computed(() =>
-  new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
-)
+/* Konteks kanan navbar: tanggal untuk tamu, sapaan + nama untuk user login */
+const topContext = computed(() => {
+  if (isLoggedIn.value && currentUser.value) {
+    const h = new Date().getHours()
+    const sapa = h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 18 ? 'Selamat sore' : 'Selamat malam'
+    return `${sapa}, ${currentUser.value.full_name || currentUser.value.username}`
+  }
+  return new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+})
 
 /* ---- Drawer sidebar (mobile) ----
    Tampil di layar ≤860px: hamburger di topbar membuka sidebar sebagai drawer
@@ -63,27 +66,38 @@ function onLogout() {
 
 <template>
   <div class="app">
-    <!-- Navbar putih full-width (ref: clip_20261015_094010_3) -->
+    <!-- Bar atas khusus layar ≤860px: hamburger + brand. Di desktop brand di sidebar -->
     <header class="topbar">
-      <div class="top-left">
-        <!-- Hamburger: hanya tampil di layar ≤860px -->
-        <button
-          type="button"
-          class="side-toggle"
-          :aria-expanded="sideOpen"
-          aria-label="Buka menu navigasi"
-          @click="sideOpen = !sideOpen"
-        >
-          <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </svg>
-        </button>
+      <button
+        type="button"
+        class="side-toggle"
+        :aria-expanded="sideOpen"
+        aria-label="Buka menu navigasi"
+        @click="sideOpen = !sideOpen"
+      >
+        <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+      <RouterLink to="/" class="brand">
+        <span v-if="bankLogo" class="brand-mark"><img :src="bankLogo" alt="" /></span>
+        <span class="brand-name">
+          {{ bankName }}
+          <em>Treasury Command</em>
+        </span>
+      </RouterLink>
+    </header>
 
+    <!-- Backdrop drawer mobile (klik untuk menutup) -->
+    <div v-if="sideOpen" class="side-backdrop" @click="sideOpen = false" />
+
+    <div class="shell">
+      <!-- Sidebar penuh setinggi layar: brand, menu, lalu akun + Present Mode -->
+      <aside :class="['sidebar', { open: sideOpen }]">
         <RouterLink to="/" class="brand">
           <span class="brand-mark">
-            <!-- Logo custom dari CMS (data URL, di memori BE); default = SVG gedung -->
-            <img v-if="logoUrl" :src="logoUrl" alt="" class="brand-logo" />
-            <svg v-else class="ico-svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 20px; height: 20px">
+            <img v-if="bankLogo" :src="bankLogo" alt="" />
+            <svg v-else class="ico-svg" viewBox="0 0 24 24" aria-hidden="true" style="width: 22px; height: 22px">
               <path d="M4 10h16M5 10v9M19 10v9M9 10v9M15 10v9M3 21h18M12 3l8 5H4l8-5z" />
             </svg>
           </span>
@@ -92,46 +106,7 @@ function onLogout() {
             <em>Treasury Command</em>
           </span>
         </RouterLink>
-      </div>
 
-      <div class="top-actions">
-        <!-- Penanda data live (dot berkedip) + tanggal ringkas hari ini -->
-        <span class="live-badge top-live" title="Data ditampilkan langsung dari database">
-          <i class="live-dot" aria-hidden="true" />Live
-        </span>
-        <span class="top-context">{{ topContext }}</span>
-        <RouterLink v-if="!isLoggedIn" to="/login" class="btn-ghost" aria-label="Login">
-          <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h11" />
-          </svg>
-          <span class="btn-label">Login</span>
-        </RouterLink>
-        <button v-else type="button" class="btn-ghost" aria-label="Keluar" @click="onLogout">
-          <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M14 8l4 4-4 4M18 12H8" />
-          </svg>
-          <span class="btn-label">Keluar</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Backdrop drawer mobile (klik untuk menutup) -->
-    <div v-if="sideOpen" class="side-backdrop" @click="sideOpen = false" />
-
-    <div class="shell">
-      <!-- Sidebar: 4 menu (ref: clip_20261015_094010_3) -->
-      <aside :class="['sidebar', { open: sideOpen }]">
-        <div class="side-user">
-          <span :class="['avatar', { guest: !isLoggedIn }]">
-            {{ (currentUser?.full_name || currentUser?.username || '?').slice(0, 2).toUpperCase() }}
-          </span>
-          <span class="side-user-info">
-            <strong>{{ currentUser?.full_name || currentUser?.username || 'Tamu' }}</strong>
-            <small>{{ isLoggedIn ? currentUser?.role : 'Belum login' }}</small>
-          </span>
-        </div>
-
-        <p class="side-label">Menu Utama</p>
         <nav class="side-nav" aria-label="Navigasi utama">
           <!-- 1. Dashboard -->
           <RouterLink to="/" class="side-link" exact-active-class="active">
@@ -158,9 +133,7 @@ function onLogout() {
               <path d="M12 3.5s5.5 6.1 5.5 9.5a5.5 5.5 0 0 1-11 0c0-3.4 5.5-9.5 5.5-9.5z" />
             </svg>
             Likuiditas
-            <span class="side-soon" data-tip="Modul ini sedang disiapkan">
-              <i class="side-soon-dot" aria-hidden="true" />Segera
-            </span>
+            <span class="side-soon">Segera</span>
           </RouterLink>
 
           <!-- 4. Pembiayaan (halaman placeholder jujur, konten menyusul) -->
@@ -169,12 +142,10 @@ function onLogout() {
               <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h11a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM16.5 11.5h2.5" />
             </svg>
             Pembiayaan
-            <span class="side-soon" data-tip="Modul ini sedang disiapkan">
-              <i class="side-soon-dot" aria-hidden="true" />Segera
-            </span>
+            <span class="side-soon">Segera</span>
           </RouterLink>
 
-          <!-- 5. CMS (khusus admin): editor tema global — hapus entry ini
+          <!-- 5. CMS (khusus admin): editor tema global: hapus entry ini
                bila palet keluar dari CMS -->
           <RouterLink v-if="isAdmin" to="/cms" class="side-link" active-class="active">
             <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
@@ -187,14 +158,35 @@ function onLogout() {
           </RouterLink>
         </nav>
 
-        <!-- Present Mode (dipindah dari topbar atas permintaan owner):
-             klik -> mulai deck slideshow; tamu -> /login (onPresent) -->
-        <button type="button" class="stage-broadcast" aria-label="Present Mode" @click="onPresent">
-          <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 4h18v12H3zM8 20h8M12 16v4" />
-          </svg>
-          Present Mode
-        </button>
+        <div class="side-foot">
+          <div class="side-user">
+            <strong>{{ topContext }}</strong>
+            <small>{{ isLoggedIn ? currentUser?.role : 'Belum login' }}</small>
+          </div>
+          <div class="side-actions">
+            <!-- Present Mode (dipindah dari topbar atas permintaan owner):
+                 klik -> mulai deck slideshow; tamu -> /login (onPresent) -->
+            <button type="button" class="stage-broadcast" @click="onPresent">
+              <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 4h18v12H3zM8 20h8M12 16v4" />
+              </svg>
+              Present Mode
+            </button>
+            <RouterLink v-if="!isLoggedIn" to="/login" class="side-action">
+              <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h11" />
+              </svg>
+              Login
+            </RouterLink>
+            <button v-else type="button" class="side-action" @click="onLogout">
+              <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M14 8l4 4-4 4M18 12H8" />
+              </svg>
+              Keluar
+            </button>
+          </div>
+          <p class="side-credit">Powered By IBA System</p>
+        </div>
       </aside>
 
       <div class="content">

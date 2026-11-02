@@ -10,7 +10,7 @@ import Sparkline from './Sparkline.vue'
 
 /* ==========================================================================
    LAPORAN PIUTANG: /api/laporan/piutang (Laporan-Keuangan-Piutang.sql)
-   Tampilan DIAGRAM GARIS: 3 chart TERPISAH — Total Piutang + rincian per
+   Tampilan DIAGRAM GARIS: 3 chart TERPISAH: Total Piutang + rincian per
    golongan akun (kolom golac TBLGL), masing-masing dgn tabel terperinci
    sendiri (paginated, 1 baris/kolom + gulir horizontal). WARNA = kantor.
    ========================================================================== */
@@ -89,7 +89,7 @@ const kColor = (k: string): string => kantorColor(k, kantors.value)
 const kLabel = (k: string): string => (k === '00' ? 'Semua Kantor' : `Kantor ${k}`)
 
 /** 3 chart TERPISAH: Total Piutang + 1 per golongan akun. Id golongan DARI
-    DATA (golac bisa berubah, jangan hardcode) — diurutkan, jadi selalu
+    DATA (golac bisa berubah, jangan hardcode): diurutkan, jadi selalu
     urutan Total, Golongan 1, Golongan 2, dst. */
 const golIds = computed(() =>
   [...new Set(golacPivot.value.map((p) => p.id.split('|')[0]))].sort(),
@@ -99,7 +99,7 @@ const chartDefs = computed<{ id: string; label: string }[]>(() => [
   ...golIds.value.map((id) => ({ id, label: `Golongan ${id.replace('golac-', '')}` })),
 ])
 
-/** Garis per chart: 1 garis per kantor (warna = kantor; tanpa dash — chart sudah terpisah). */
+/** Garis per chart: 1 garis per kantor (warna = kantor; tanpa dash: chart sudah terpisah). */
 const seriesOf = (chartId: string): LineSerie[] => {
   const all = [...mainPivot.value, ...golacPivot.value]
   return kantors.value.flatMap((k): LineSerie[] => {
@@ -117,7 +117,7 @@ const seriesOf = (chartId: string): LineSerie[] => {
 }
 
 /** Baris tabel terperinci per chart: 1 baris per kantor, kolom = periode
-    (paginated DetailTable). Fungsi biasa (bukan computed) — dipanggil saat
+    (paginated DetailTable). Fungsi biasa (bukan computed): dipanggil saat
     render, dependensi tetap ter-track. */
 const tableRows = (chartId: string): Record<string, unknown>[] => {
   const src =
@@ -141,14 +141,14 @@ const tableCols = computed<DetailCol[]>(() => [
 ])
 
 /** Satu entri per chart (defs + garis + baris tabel) utk loop template:
-    Total Piutang, Golongan 1, Golongan 2 — masing-masing chart + tabel sendiri. */
+    Total Piutang, Golongan 1, Golongan 2: masing-masing chart + tabel sendiri. */
 const chartData = computed(() =>
   chartDefs.value.map((c) => ({ ...c, series: seriesOf(c.id), rows: tableRows(c.id) })),
 )
 const hasChart = computed(() => chartData.value.some((c) => c.series.length > 0))
 
 /** Periode kartu: bulan TERAKHIR dgn data (saldo > 0; baris bln depan di
-    snapshot parsial balik 0 — existence saja bikin kartu "Posisi Des" = 0
+    snapshot parsial balik 0: existence saja bikin kartu "Posisi Des" = 0
     dan pertumbuhan -100% padahal grafik ada isinya). */
 const lastKey = computed<string>(
   () =>
@@ -215,53 +215,57 @@ onMounted(() => {
 
 <template>
   <div>
-    <section class="panel">
-      <div class="toolbar">
-        <div class="filters">
-          <label>
-            Tahun
-            <select v-model="tahun" @change="load()">
-              <option v-for="y in Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))" :key="y" :value="y">
-                {{ y }}
-              </option>
-            </select>
-          </label>
-          <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
+    <div class="toolbar report-filters">
+      <div class="filters">
+        <label>
+          Tahun
+          <select v-model="tahun" @change="load()">
+            <option v-for="y in Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i))" :key="y" :value="y">
+              {{ y }}
+            </option>
+          </select>
+        </label>
+        <KantorPicker v-if="!loading && !error" v-model="hidden" :kantors="kantors" />
+      </div>
+      <span v-if="loading" class="muted small">Memuat laporan…</span>
+    </div>
+
+    <section class="lead">
+      <div>
+        <p class="lead-label">Posisi Piutang</p>
+        <p class="lead-value num">{{ loading ? '–' : formatRupiah(totalAkhir) }}</p>
+        <p class="lead-note">Posisi {{ lastLabel }}</p>
+      </div>
+      <div>
+        <div class="lead-spark">
+          <Sparkline v-if="!loading" :values="totalSeries" aria-label="Tren total piutang per bulan" />
         </div>
-        <span v-if="loading" class="muted small">Memuat…</span>
-      </div>
-    </section>
-
-    <section class="cards">
-      <div class="card metric">
-        <span class="label">Posisi Piutang</span>
-        <strong class="num">{{ loading ? '–' : formatRupiah(totalAkhir) }}</strong>
-        <span class="muted small">{{ lastLabel }}</span>
-        <Sparkline v-if="!loading" :values="totalSeries" aria-label="Tren total piutang per bulan" />
-      </div>
-      <div class="card metric">
-        <span class="label">Pertumbuhan Piutang</span>
-        <strong class="num">
-          {{ loading ? '–' : (growthPct == null ? '–' : `${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`) }}
-        </strong>
-        <span v-if="growthPct != null" :class="['chip', growthPct >= 0 ? 'up' : 'down']">
-          <i class="dot" aria-hidden="true" />Des {{ Number(tahun) - 1 }} s.d. Des {{ tahun }}
-        </span>
-        <span v-else class="muted small">Tidak ada pembanding Des {{ Number(tahun) - 1 }}</span>
-      </div>
-      <div class="card metric">
-        <span class="label">Selisih vs Des {{ Number(tahun) - 1 }}</span>
-        <strong class="num">{{ loading ? '–' : formatRupiah(totalAkhir - totalAwal) }}</strong>
-        <span :class="['chip', (totalAkhir - totalAwal) >= 0 ? 'up' : 'down']">
-          <i class="dot" aria-hidden="true" />Des {{ Number(tahun) - 1 }} s.d. {{ lastLabel }}
-        </span>
+        <dl class="ledger">
+          <div>
+            <dt>
+              Pertumbuhan Piutang
+              <small v-if="growthPct != null">Des {{ Number(tahun) - 1 }} s.d. {{ lastLabel }}</small>
+              <small v-else>Tidak ada pembanding Des {{ Number(tahun) - 1 }}</small>
+            </dt>
+            <dd class="num" :class="growthPct == null ? '' : growthPct >= 0 ? 'g-up' : 'g-down'">
+              <template v-if="!loading && growthPct != null">{{ growthPct >= 0 ? '▲' : '▼' }}</template>
+              {{ loading ? '–' : (growthPct == null ? '–' : `${growthPct >= 0 ? '+' : ''}${growthPct.toFixed(1)}%`) }}
+            </dd>
+          </div>
+          <div>
+            <dt>Selisih vs Des {{ Number(tahun) - 1 }} <small>Des {{ Number(tahun) - 1 }} s.d. {{ lastLabel }}</small></dt>
+            <dd class="num" :class="(totalAkhir - totalAwal) >= 0 ? 'g-up' : 'g-down'">
+              {{ loading ? '–' : formatRupiah(totalAkhir - totalAwal) }}
+            </dd>
+          </div>
+        </dl>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Laporan Piutang: {{ tahun }}</h2>
+      <h2>Tren {{ tahun }}</h2>
       <p class="sub">
-        Satu diagram per golongan (Total Piutang, Golongan 1, Golongan 2) · warna = kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}
+        Satu diagram per golongan. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.
       </p>
       <p v-if="loading" class="muted">Memuat laporan piutang…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
@@ -275,8 +279,8 @@ onMounted(() => {
             :aria-label="`Grafik garis ${c.label} per kantor`"
           />
           <p class="note">
-            Hover titik utk nilai rupiah · warna = kantor ·
-            titik pertama (Des sebelumnya) = carry-over saldo awal tahun.
+            Arahkan kursor ke titik untuk nilai rupiah penuh. Titik pertama
+            (Des tahun sebelumnya) adalah saldo awal tahun.
           </p>
           <MoreDetails :id="`det-${c.id}`" :open="!!detOpen[c.id]" @toggle="toggleDet(c.id)">
             <DetailTable :cols="tableCols" :rows="tableRows(c.id)" :per-page="10" />
@@ -286,19 +290,4 @@ onMounted(() => {
     </section>
   </div>
 </template>
-
-<style scoped>
-/* Pemisah antar chart golongan (Total, Golongan 1, Golongan 2). */
-.chart-block + .chart-block {
-  margin-top: 1.6rem;
-  padding-top: 1.2rem;
-  border-top: 1px dashed var(--border);
-}
-.chart-title {
-  font-family: var(--font-display);
-  font-size: 1.1rem;
-  color: var(--primary);
-  margin: 0 0 0.45rem;
-}
-</style>
 

@@ -6,9 +6,11 @@ Akun mock: admin/admin123 (admin) | user/user123 (member)
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import re
+import unicodedata
 
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import Depends, FastAPI, HTTPException, Query, status
@@ -416,104 +418,146 @@ def put_theme(body: ThemeIn, user: dict = Depends(current_user)):
 
 
 # ---------------------------------------------------------------------------
-#  BRANDING (CMS identitas bank) — app_settings(key='branding', value=JSON
-#  {bank_name, icon, logo}).
-#  - Nama bank dipakai FE utk brand navbar + judul tab (document.title).
-#  - Icon (favicon) & logo disimpan sebagai DATA URL base64 DI MEMORI
-#    (mode mock: dict proses BE; mode live: kolom NVARCHAR(MAX)) — tanpa
-#    S3/storage file, sesuai permintaan CMS.
-#  GET : publik (judul/favicon/logo harus benar sebelum login).
-#  PUT : admin only; field tidak dikirim = tetap, null = hapus (default).
+#  IDENTITAS BANK — app_settings(key='bank_name', value=teks nama bank)
+#  GET  : publik (nama tampil di halaman login & untuk tamu); gagal DB -> default.
+#  PUT  : admin only; spasi dirapikan, wajib terisi, maks BANK_NAME_MAX karakter.
 # ---------------------------------------------------------------------------
 
-BRANDING_KEY = "branding"
-DEFAULT_BRANDING: dict = {"bank_name": "BankDash", "icon": None, "logo": None}
-# Data URL gambar yang diterima: png/jpeg/webp/svg/x-icon
-_DATA_URL = re.compile(
-    r"^data:image/(?:png|jpe?g|webp|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,"
-    r"[A-Za-z0-9+/]+={0,2}$"
-)
-MAX_IMG_CHARS = 500_000  # ~375 KB binary — cukup utk favicon & logo web
+BANK_NAME_KEY = "bank_name"
+BANK_NAME_MAX = 60
+DEFAULT_BANK_NAME = "BankDash"
 
 
-def _load_branding() -> dict:
-    """Baca branding tersimpan, merge dgn default; JSON rusak -> default."""
-    out = dict(DEFAULT_BRANDING)
-    rows = db.run_query(Q.Q_BRANDING_GET, (BRANDING_KEY,))
-    if not rows:
-        return out
-    try:
-        saved = json.loads(rows[0].get("value") or "")
-    except (ValueError, TypeError):
-        return out
-    if isinstance(saved, dict):
-        name = saved.get("bank_name")
-        if isinstance(name, str) and name.strip():
-            out["bank_name"] = name.strip()[:60]
-        for k in ("icon", "logo"):
-            v = saved.get(k)
-            if isinstance(v, str) and v.startswith("data:image/"):
-                out[k] = v
-    return out
+def _clean_bank_name(raw: str) -> str:
+    """Rapikan spasi; karakter kontrol ditolak (nilai tampil di UI & judul tab)."""
+    name = " ".join(raw.split())
+    return "" if any(unicodedata.category(c) == "Cc" for c in name) else name
+
+
+def _load_bank_name() -> str:
+    rows = db.run_query(Q.Q_THEME_GET, (BANK_NAME_KEY,))
+    saved = _clean_bank_name(str(rows[0].get("value") or "")) if rows else ""
+    return saved[:BANK_NAME_MAX] or DEFAULT_BANK_NAME
+
+
+#  Logo & favicon: data URL base64 di app_settings (kkey bank_logo/bank_favicon).
+#  Tipe ditentukan dari ISI file (bukan label kiriman) lalu data URL disusun ulang.
+#  FE hanya memakainya lewat <img>/<link rel=icon>, tempat skrip SVG tidak jalan;
+#  SVG berisi skrip tetap ditolak sebagai lapisan kedua.
+BRAND_IMAGES = {
+    "logo": {"key": "bank_logo", "max": 500 * 1024,
+             "types": ("image/png", "image/jpeg", "image/webp", "image/svg+xml")},
+    "favicon": {"key": "bank_favicon", "max": 100 * 1024,
+                "types": ("image/png", "image/svg+xml", "image/x-icon")},
+}
+_DATA_URL = re.compile(r"^data:[^;,]*;base64,([A-Za-z0-9+/=\s]+)$")
+_SVG_UNSAFE = re.compile(rb"<script|<foreignobject|<iframe|<embed|javascript:|\son\w+\s*=", re.I)
+
+
+def _sniff_image(raw: bytes) -> str | None:
+    """Tipe gambar dari byte awal; None bila bukan format yang didukung."""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw[:4] == b"\x00\x00\x01\x00":
+        return "image/x-icon"
+    head = raw[:2048].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if (head.startswith(b"<svg") or head.startswith(b"<?xml")) and b"<svg" in raw.lower():
+        return "image/svg+xml"
+    return None
+
+
+def _load_brand_image(kind: str) -> str | None:
+    rows = db.run_query(Q.Q_THEME_GET, (BRAND_IMAGES[kind]["key"],))
+    value = str(rows[0].get("value") or "") if rows else ""
+    return value if value.startswith("data:image/") else None
 
 
 class BrandingIn(BaseModel):
-    bank_name: str | None = None
-    icon: str | None = None
-    logo: str | None = None
+    bank_name: str
+
+
+class BrandImageIn(BaseModel):
+    kind: str
+    data_url: str = ""  # kosong = hapus, kembali ke gambar bawaan
 
 
 @app.get("/api/branding")
 def get_branding():
-    """Identitas bank (nama + icon + logo). Publik; gagal DB -> default."""
+    """Identitas bank. Publik; DB/tabel tak tersedia -> default (JANGAN 500)."""
     try:
         if not db.MOCK_MODE:
             _ensure_theme_table()
-        return _load_branding()
+        return {
+            "bank_name": _load_bank_name(),
+            "logo": _load_brand_image("logo"),
+            "favicon": _load_brand_image("favicon"),
+            "source": "db",
+        }
     except Exception:
-        return dict(DEFAULT_BRANDING)
+        return {"bank_name": DEFAULT_BANK_NAME, "logo": None, "favicon": None, "source": "default"}
+
+
+@app.put("/api/branding/image")
+def put_brand_image(body: BrandImageIn, user: dict = Depends(current_user)):
+    """Simpan/hapus logo atau favicon (admin only)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah logo dan favicon")
+    spec = BRAND_IMAGES.get(body.kind)
+    if not spec:
+        raise HTTPException(status_code=422, detail="Jenis gambar harus logo atau favicon")
+    value = ""
+    if body.data_url:
+        limit_kb = spec["max"] // 1024
+        too_big = f"Ukuran file maksimal {limit_kb} KB"
+        if len(body.data_url) > spec["max"] * 2:
+            raise HTTPException(status_code=422, detail=too_big)
+        match = _DATA_URL.match(body.data_url)
+        try:
+            raw = base64.b64decode(match.group(1), validate=False) if match else b""
+        except ValueError:
+            raw = b""
+        if len(raw) > spec["max"]:
+            raise HTTPException(status_code=422, detail=too_big)
+        mime = _sniff_image(raw)
+        if mime not in spec["types"]:
+            raise HTTPException(status_code=422, detail="Format file tidak didukung atau file rusak")
+        if mime == "image/svg+xml" and _SVG_UNSAFE.search(raw):
+            raise HTTPException(status_code=422, detail="File SVG berisi skrip dan ditolak")
+        value = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        affected = db.run_sql(Q.Q_THEME_UPDATE, (value, spec["key"]))
+        if not affected:
+            db.run_sql(Q.Q_THEME_INSERT, (spec["key"], value))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Gagal menyimpan gambar: {_db_detail(exc)}")
+    return {"ok": True, "kind": body.kind, "data_url": value or None}
 
 
 @app.put("/api/branding")
 def put_branding(body: BrandingIn, user: dict = Depends(current_user)):
-    """Simpan identitas bank (admin only). Field tidak dikirim = tetap;
-    icon/logo null = kembali ke default (favicon.svg / brand bawaan)."""
+    """Simpan nama bank (admin only)."""
     if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah identitas bank")
-    current = _load_branding()
-    updates: dict = {}
-    if "bank_name" in body.model_fields_set:
-        name = (body.bank_name or "").strip()
-        if not name or len(name) > 60:
-            raise HTTPException(status_code=422, detail="Nama bank wajib diisi, maks 60 karakter")
-        updates["bank_name"] = name
-    for k in ("icon", "logo"):
-        if k not in body.model_fields_set:
-            continue
-        v = body.icon if k == "icon" else body.logo
-        if v is None:
-            updates[k] = None
-            continue
-        v = v.strip()
-        if len(v) > MAX_IMG_CHARS or not _DATA_URL.match(v):
-            raise HTTPException(
-                status_code=422,
-                detail=f"Gambar {k} tidak valid — pakai data:image/...;base64, maks ~375 KB",
-            )
-        updates[k] = v
-    if not updates:
-        raise HTTPException(status_code=422, detail="Tidak ada perubahan yang dikirim")
-    merged = {**current, **updates}
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah nama bank")
+    name = _clean_bank_name(body.bank_name)
+    if not name:
+        raise HTTPException(status_code=422, detail="Nama bank wajib diisi")
+    if len(name) > BANK_NAME_MAX:
+        raise HTTPException(status_code=422, detail=f"Nama bank maksimal {BANK_NAME_MAX} karakter")
     try:
         if not db.MOCK_MODE:
             _ensure_theme_table()
-        value = json.dumps(merged, separators=(",", ":"))
-        affected = db.run_sql(Q.Q_BRANDING_UPDATE, (value, BRANDING_KEY))
+        affected = db.run_sql(Q.Q_THEME_UPDATE, (name, BANK_NAME_KEY))
         if not affected:
-            db.run_sql(Q.Q_BRANDING_INSERT, (BRANDING_KEY, value))
+            db.run_sql(Q.Q_THEME_INSERT, (BANK_NAME_KEY, name))
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Gagal menyimpan identitas — {_db_detail(exc)}")
-    return {"ok": True, **merged}
+        raise HTTPException(status_code=503, detail=f"Gagal menyimpan nama bank: {_db_detail(exc)}")
+    return {"ok": True, "bank_name": name}
 
 
 # ---------------------------------------------------------------------------

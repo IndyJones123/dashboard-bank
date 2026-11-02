@@ -8,13 +8,12 @@
     <div class="page-head">
       <div>
         <h1>Pembiayaan</h1>
-        <p class="muted small">Powered By IBA System</p>
       </div>
     </div>
     <section class="panel">
-      <p class="muted">
-        Halaman Pembiayaan sedang disiapkan dan akan segera tersedia.
-      </p>
+      <h2>Segera tersedia</h2>
+      <p class="muted">Halaman ini sedang disiapkan. Sementara itu, posisi piutang per kantor ada di Laporan Piutang.</p>
+      <RouterLink class="btn-ghost" :to="{ path: '/reports', query: { jenis: 'piutang' } }">Buka Laporan Piutang</RouterLink>
     </section>
   </div>
 </template>

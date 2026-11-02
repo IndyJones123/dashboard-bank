@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+
 /* ==========================================================================
    KantorPicker: dropdown checkbox per kantor untuk grafik & total laporan.
    Murni filter tampilan di client (data tetap dari query yang sama).
@@ -8,6 +10,8 @@
 const props = defineProps<{ kantors: string[] }>()
 const hidden = defineModel<string[]>({ default: () => [] })
 
+const root = ref<HTMLDetailsElement | null>(null)
+
 const toggle = (k: string, on: boolean): void => {
   hidden.value = on ? hidden.value.filter((x) => x !== k) : [...hidden.value, k]
 }
@@ -15,10 +19,17 @@ const summary = (): string => {
   const shown = props.kantors.length - hidden.value.length
   return shown === props.kantors.length ? 'Semua kantor' : `${shown} dari ${props.kantors.length} kantor`
 }
+/** Esc menutup menu & mengembalikan fokus ke pemicunya. */
+const closeMenu = (): void => {
+  const el = root.value
+  if (!el?.open) return
+  el.open = false
+  el.querySelector('summary')?.focus()
+}
 </script>
 
 <template>
-  <details v-if="kantors.length > 1" class="kantor-pick">
+  <details v-if="kantors.length > 1" ref="root" class="kantor-pick" @keydown.esc="closeMenu">
     <summary>
       Kantor: <strong>{{ summary() }}</strong>
     </summary>
@@ -43,54 +54,73 @@ const summary = (): string => {
 .kantor-pick {
   position: relative;
   display: inline-block;
-  font-size: 1rem;
+  font-size: var(--fs-base);
 }
 .kantor-pick > summary {
   list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 44px;
+  padding: 0.4rem 0.75rem;
   cursor: pointer;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0.7rem 0.95rem;
-  background: #fff;
+  border: 1px solid var(--ink-16);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted-2);
+  font-weight: 600;
   user-select: none;
+}
+.kantor-pick > summary strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.kantor-pick > summary:hover {
+  border-color: var(--primary);
 }
 .kantor-pick > summary::-webkit-details-marker {
   display: none;
 }
 .kantor-pick > summary::after {
-  content: ' ▾';
-  color: #475569;
+  content: '▾';
+  color: var(--muted);
 }
 .kantor-pick[open] > summary {
   border-color: var(--primary);
 }
+/* Shadow: menu melayang di atas grafik, satu-satunya elemen terangkat di sini */
 .kp-menu {
   position: absolute;
   z-index: 10;
   top: calc(100% + 0.3rem);
   left: 0;
   min-width: 16rem;
-  padding: 0.6rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgb(15 23 42 / 0.12);
+  padding: 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
 }
 .kp-quick-row {
   display: flex;
   justify-content: space-between;
-  padding-bottom: 0.4rem;
-  margin-bottom: 0.3rem;
-  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-strong);
 }
 .kp-quick {
+  min-height: 44px;
+  padding: 0 0.5rem;
   border: 0;
   background: none;
-  padding: 0;
   color: var(--primary);
+  font-family: inherit;
+  font-size: var(--fs-base);
   font-weight: 600;
-  text-decoration: underline;
   cursor: pointer;
+}
+.kp-quick:hover {
+  text-decoration: underline;
 }
 .kp-item {
   display: flex;
@@ -98,42 +128,41 @@ const summary = (): string => {
   align-items: center;
   justify-content: space-between;
   gap: 1.2rem;
-  padding: 0.6rem 0.65rem;
+  min-height: 44px;
+  padding: 0.3rem 0.5rem;
   border-radius: 6px;
+  color: var(--ink);
+  font-weight: 500;
   cursor: pointer;
 }
 .kp-item:hover {
-  background: #f1f5f9;
+  background: var(--surface-2);
 }
-/* Checkbox custom gaya Tailwind form-checkbox (accent emerald). */
 .kp-item input[type='checkbox'] {
   appearance: none;
   flex: 0 0 auto;
-  width: 1.2rem;
-  height: 1.2rem;
-  border: 1.5px solid #94a3b8;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  border: 1.5px solid var(--muted);
   border-radius: 0.25rem;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
   position: relative;
 }
 .kp-item input[type='checkbox']:checked {
-  background: var(--green-dark);
-  border-color: var(--green-dark);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 .kp-item input[type='checkbox']:checked::after {
   content: '';
   position: absolute;
-  left: 0.34rem;
-  top: 0.06rem;
+  left: 0.36rem;
+  top: 0.08rem;
   width: 0.28rem;
   height: 0.62rem;
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
-}
-.kp-item input[type='checkbox']:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 </style>
