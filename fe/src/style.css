@@ -304,6 +304,21 @@ h1, h2, h3 { font-family: var(--font-display); color: var(--ink); letter-spacing
 /* Nilai tabel selalu 1 baris (aturan owner); sisa lebar digulir di dalam tabel */
 .dash-grid th, .dash-grid td { padding: 0.35rem 0.5rem; white-space: nowrap; }
 
+/* ---- Grid widget (layout dari CMS Widget Setting) ----
+   Urutan = CSS order, lebar = --span dari useWidgets(); baris yang tidak
+   penuh sudah dilebarkan di packRows, jadi grid tidak berlubang. */
+.wgrid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 0.85rem; margin-bottom: 1rem; }
+.wgrid > .w { grid-column: span var(--span, 12); min-width: 0; }
+.wgrid > .panel { margin: 0; }
+/* Pecahan blok angka utama: tanpa kartu, rata bawah spt .lead lama */
+.lead-part { align-self: end; padding: 0 0 1rem; }
+.lead-part.hero { padding-right: 2rem; }
+.wgrid-empty { margin: 0 0 1rem; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
 .insight { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .insight h3 { font-size: var(--fs-base); }
 .donut-row { display: grid; grid-template-columns: minmax(0, 132px) minmax(0, 1fr); gap: 0.9rem; align-items: center; }
@@ -552,7 +567,7 @@ tbody tr:hover td { background: var(--ink-4); }
 }
 /* Fill backwards (bukan both): transform tak bertahan setelah animasi, kalau
    bertahan panel jadi stacking context dan menutupi dropdown Kantor. */
-.main :where(.page-head, .report-tabs, .report-filters, .lead, .panel) {
+.main :where(.page-head, .report-tabs, .report-filters, .lead, .lead-part, .panel) {
   animation: page-in 0.35s cubic-bezier(0.22, 0.7, 0.25, 1) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -567,6 +582,10 @@ body.present-mode .topbar,
 body.present-mode .sidebar,
 body.present-mode .side-backdrop { display: none !important; }
 body.present-mode .shell { min-height: 100vh; }
+/* Pratinjau widget di iframe CMS: hanya konten halaman, tanpa navigasi */
+body.widget-preview .topbar,
+body.widget-preview .sidebar,
+body.widget-preview .side-backdrop { display: none !important; }
 body.present-mode .main { padding-top: 1.75rem; padding-bottom: 5rem; }
 
 /* Blur alasan: 2 kontrol ini melayang di atas chart padat, teks putih harus
@@ -647,6 +666,7 @@ body.present-mode .main { padding-top: 1.75rem; padding-bottom: 5rem; }
    ========================================================================== */
 @media (max-width: 1180px) {
   .span-8, .span-7, .span-5, .span-4 { grid-column: span 12; }
+  .wgrid > .w:not(.lead-part) { grid-column: span 12; }
   .dash-grid .chart-wrap svg { max-height: 280px; }
   /* Target 1 layar hanya untuk desktop: di bawah ini semua transaksi tampil penuh */
   .dash-grid .table-scroll { max-height: none; }
@@ -663,6 +683,9 @@ body.present-mode .main { padding-top: 1.75rem; padding-bottom: 5rem; }
   .sidebar.open { transform: translateX(0); visibility: visible; box-shadow: var(--shadow-raised); }
   .sidebar .brand { display: none; }
   .lead { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .wgrid > .w.lead-part { grid-column: span 12; }
+  .lead-part { padding-bottom: 0; }
+  .lead-part.hero { padding-right: 0; }
 }
 @media (min-width: 861px) { .side-backdrop, .topbar { display: none; } }
 @media (max-width: 720px) {

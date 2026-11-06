@@ -9,6 +9,8 @@ import MoreDetails from './MoreDetails.vue'
 import Sparkline from './Sparkline.vue'
 import { formatRpSingkat, kantorColor, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
 import { slideTransition } from '../stores/present'
+import { pageViewable, useWidgets } from '../stores/widgets'
+import WidgetNotice from './WidgetNotice.vue'
 
 /* ==========================================================================
    LAPORAN KEUANGAN: 5 jenis laporan:
@@ -87,6 +89,11 @@ function apiErrText(e: unknown, fallback: string): string {
 
 const glKindLabel: Record<string, string> = REPORT_KIND_LABELS
 
+// Layout widget GL (aset / laba rugi) dari CMS; laporan lain di komponen child
+const w = useWidgets(computed(() => `reports-${glKind.value}`))
+// Tab jenis: tamu hanya melihat jenis yg punya widget utk tamu
+const visibleKinds = computed(() => REPORT_KINDS.filter((k) => pageViewable(`reports-${k}`)))
+
 /** Label tab = label laporan tanpa kata "Laporan" (sudah jelas dari halaman). */
 const tabLabel = (k: string): string => REPORT_KIND_LABELS[k].replace(/^Laporan /, '')
 const REPORT_INTRO: Record<string, string> = {
@@ -105,7 +112,7 @@ const isGl = computed(() => glKind.value === 'aset' || glKind.value === 'labarug
 // (route.query ikut berubah selama view masih animasi keluar).
 watch(glKind, () => {
   if (route.path !== '/reports') return
-  if (isGl.value) void loadGl()
+  if (isGl.value) void Promise.all([loadGlOffices(), loadGl()])
   window.scrollTo({ top: 0 })
 })
 const glApiBase = computed(() => (glKind.value === 'aset' ? 'aset' : 'laba-rugi'))
@@ -174,7 +181,11 @@ async function loadGl(): Promise<void> {
   }
 }
 
+let glOfficesLoaded = false
 async function loadGlOffices(): Promise<void> {
+  // Hanya utk jenis GL (tamu di laporan non-GL bisa tak berhak -> 401)
+  if (glOfficesLoaded || !isGl.value) return
+  glOfficesLoaded = true
   try {
     const { data } = await api.get('/api/gl/offices')
     glOffices.value = (data as { kdloc: string }[]).map((o) => String(o.kdloc))
@@ -592,7 +603,7 @@ onMounted(async () => {
     <!-- Jenis laporan: tab menulis ?jenis lewat glKind (sama spt deck Present) -->
     <nav class="report-tabs" aria-label="Jenis laporan">
       <button
-        v-for="k in REPORT_KINDS"
+        v-for="k in visibleKinds"
         :key="k"
         type="button"
         :class="{ on: glKind === k }"
@@ -642,9 +653,9 @@ onMounted(async () => {
     </div>
 
     <!-- Angka utama: dari menu 1 (konsolidasi semua cabang) -->
-    <template v-if="isGl">
-    <section class="lead">
-      <div>
+    <WidgetNotice v-if="isGl" :w="w" />
+    <div v-if="isGl" class="wgrid">
+    <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">{{ glTotalLabel }}</p>
         <p class="lead-value num">{{ glLoading ? '–' : formatRupiah(glTotal) }}</p>
         <p class="lead-note">
@@ -655,7 +666,8 @@ onMounted(async () => {
           <span v-else class="chip neutral">{{ glIsArus ? 'Arus periode berjalan' : 'Posisi stok' }}</span>
           Konsolidasi semua cabang, {{ glPeriodText }}
         </p>
-      </div>
+    </section>
+    <section v-if="w.show('tren-singkat')" class="w lead-part" :style="w.style('tren-singkat')">
       <div class="lead-spark">
         <Sparkline
           v-if="!glLoading && !glError && glTotalSeries.length > 1"
@@ -666,7 +678,7 @@ onMounted(async () => {
     </section>
 
     <!-- ================= MENU 1: KONSOLIDASI SEMUA CABANG ================= -->
-    <section class="panel">
+    <section v-if="w.show('konsolidasi')" class="w panel" :style="w.style('konsolidasi')">
       <h2>Konsolidasi Semua Cabang</h2>
       <p class="sub">
         {{ glGranular === 'bulanan' ? 'Per bulan' : 'Per tahun' }}, {{ glPeriodText }}
@@ -789,7 +801,7 @@ onMounted(async () => {
     </section>
 
     <!-- ================= MENU 2: RINCIAN PER KANTOR ================= -->
-    <section class="panel">
+    <section v-if="w.show('per-kantor')" class="w panel" :style="w.style('per-kantor')">
       <div class="toolbar">
         <div>
           <h2>Rincian per Kantor</h2>
@@ -938,7 +950,7 @@ onMounted(async () => {
         </MoreDetails>
       </template>
     </section>
-    </template><!-- /isGl -->
+    </div><!-- /isGl -->
 
     <!-- Laporan non-GL: filter & konten masing-masing di komponen child -->
     <template v-else>

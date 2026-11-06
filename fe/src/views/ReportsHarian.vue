@@ -3,6 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import api, { formatRupiah } from '../api'
 import { apiErrText, formatRpSingkat } from '../report-helpers'
 import MoreDetails from './MoreDetails.vue'
+import { useWidgets } from '../stores/widgets'
+import WidgetNotice from './WidgetNotice.vue'
+
+// Layout widget dari CMS (urutan, tampil/sembunyi, lebar)
+const w = useWidgets('reports-harian')
 
 /* ==========================================================================
    LAPORAN KEUANGAN HARIAN: /api/laporan/harian
@@ -131,13 +136,14 @@ onMounted(() => {
     </div>
 
     <!-- Ringkasan posisi harian: nilai ringkas (T/M/jt), hover = rupiah penuh -->
-    <section class="lead">
-      <div>
+    <WidgetNotice :w="w" />
+    <div class="wgrid">
+    <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Total OS Pokok</p>
         <p class="lead-value num" :title="cardFull(totalOS)">{{ cardVal(totalOS) }}</p>
         <p class="lead-note">Outstanding portofolio per {{ tanggalIndo }}</p>
-      </div>
-      <dl class="ledger">
+    </section>
+      <dl v-if="w.show('ringkasan')" class="w lead-part ledger" :style="w.style('ringkasan')">
         <div>
           <dt>Kas <small>Posisi hari ini</small></dt>
           <dd class="num" :title="cardFull(kas)">{{ cardVal(kas) }}</dd>
@@ -155,10 +161,9 @@ onMounted(() => {
           <dd class="num" :title="cardFull(labaBerjalan)">{{ cardVal(labaBerjalan) }}</dd>
         </div>
       </dl>
-    </section>
 
     <!-- Perincian: satu tabel berkelompok, tanggal format Indonesia -->
-    <section class="panel">
+    <section v-if="w.show('perincian')" class="w panel" :style="w.style('perincian')">
       <h2>Perincian Laporan Keuangan Harian</h2>
       <p class="sub">
         {{ tanggalIndo }}, {{ kdloc === '00' ? 'semua kantor' : `Kantor ${kdloc}` }}
@@ -199,6 +204,7 @@ onMounted(() => {
         </MoreDetails>
       </template>
     </section>
+    </div>
   </div>
 </template>
 

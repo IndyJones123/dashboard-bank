@@ -45,14 +45,19 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 /* ---- Present Mode ----
    Deck slide lintas menu (Dashboard, 5 laporan, Likuiditas, Pembiayaan):
    mulai DARI halaman yang sedang dibuka (bukan dipaksa ke /reports).
-   Halaman di luar deck (mis. /accounts) -> ke Dashboard dulu; tamu -> /login
-   (guard auth boleh redirect; present tidak pernah aktif di luar deck). */
+   Halaman di luar deck (mis. /accounts) -> ke slide pertama deck dulu.
+   Tamu boleh present: deck-nya hanya slide yg punya widget utk tamu (atur di
+   CMS > Widget Setting); deck kosong -> /login. */
 function onPresent() {
-  if (!isLoggedIn.value) {
+  const first = PRESENT_SLIDES.value[0]
+  if (!first) {
     void router.push('/login')
     return
   }
-  const go = slideIdx.value >= 0 ? Promise.resolve() : router.push('/')
+  const go =
+    slideIdx.value >= 0
+      ? Promise.resolve()
+      : router.push({ path: first.path, query: first.jenis ? { jenis: first.jenis } : {} })
   void go.then(() => {
     if (slideIdx.value >= 0) void enterPresent()
   })

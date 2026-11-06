@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import api, { formatRupiah } from '../api'
-import { isLoggedIn } from '../stores/auth'
+import { useWidgets } from '../stores/widgets'
+import WidgetNotice from './WidgetNotice.vue'
 
 interface Stats {
   total_nasabah: number
@@ -35,7 +35,8 @@ interface Profit {
   laba: number
 }
 
-const router = useRouter()
+// Layout widget dari CMS (urutan, tampil/sembunyi, lebar)
+const w = useWidgets('dashboard')
 const stats = ref<Stats | null>(null)
 const flow = ref<Flow[]>([])
 const recent = ref<Tx[]>([])
@@ -135,19 +136,28 @@ const labaBars = computed(() => {
   }
 })
 
+/* Data diambil per widget yang tampil bagi penonton ini (tamu hanya widget
+   yang diizinkan admin; BE juga menolak sisanya dgn 401). Satu endpoint
+   gagal tidak menggagalkan widget lain. */
+const is401 = (e: unknown): boolean => (e as { response?: { status?: number } })?.response?.status === 401
+
 async function loadPublic(): Promise<void> {
-  const [s, f, r] = await Promise.all([
-    api.get('/api/dashboard/stats'),
-    api.get('/api/dashboard/monthly-flow'),
-    api.get('/api/dashboard/recent-transactions', { params: { limit: 6 } }),
-  ])
-  stats.value = s.data
-  flow.value = f.data
-  recent.value = r.data
+  const jobs: Promise<void>[] = []
+  if (w.show('total-simpanan') || w.show('ringkasan'))
+    jobs.push(api.get('/api/dashboard/stats').then((r) => { stats.value = r.data }))
+  if (w.show('arus-kas') || w.show('komposisi'))
+    jobs.push(api.get('/api/dashboard/monthly-flow').then((r) => { flow.value = r.data }))
+  if (w.show('transaksi'))
+    jobs.push(
+      api.get('/api/dashboard/recent-transactions', { params: { limit: 6 } }).then((r) => { recent.value = r.data }),
+    )
+  const res = await Promise.allSettled(jobs)
+  const failed = res.filter((r): r is PromiseRejectedResult => r.status === 'rejected' && !is401(r.reason))
+  if (failed.length) throw failed[0].reason
 }
 
 async function loadPremium(): Promise<void> {
-  if (!isLoggedIn.value) return
+  if (!w.show('insight')) return
   loadingPremium.value = true
   try {
     const [dep, prof] = await Promise.all([
@@ -188,14 +198,16 @@ onMounted(async () => {
     <p v-if="error" class="alert">{{ error }}</p>
     <p v-if="loading" class="muted">Memuat ringkasan dashboard…</p>
 
-    <!-- Angka utama: Total Simpanan jadi fokus, 3 angka lain sebagai rincian -->
-    <section v-if="stats" class="lead">
-      <div>
+    <!-- Widget: urutan, visibilitas, dan lebar diatur admin di CMS > Widget Setting -->
+    <WidgetNotice :w="w" />
+    <div class="dash-grid wgrid">
+      <!-- Angka utama: Total Simpanan jadi fokus, 3 angka lain sebagai rincian -->
+      <section v-if="stats && w.show('total-simpanan')" class="w lead-part hero" :style="w.style('total-simpanan')">
         <p class="lead-label">Total Simpanan</p>
         <p class="lead-value num">{{ formatRupiah(stats.total_simpanan) }}</p>
         <p class="lead-note">Akumulasi seluruh rekening</p>
-      </div>
-      <dl class="ledger">
+      </section>
+      <dl v-if="stats && w.show('ringkasan')" class="w lead-part ledger" :style="w.style('ringkasan')">
         <div>
           <dt>Total Nasabah <small>Terdaftar aktif</small></dt>
           <dd class="num">{{ stats.total_nasabah?.toLocaleString('id-ID') ?? '–' }}</dd>
@@ -209,10 +221,8 @@ onMounted(async () => {
           <dd class="num">{{ formatRupiah(stats.kredit_berjalan) }}</dd>
         </div>
       </dl>
-    </section>
 
-    <div class="dash-grid">
-      <section class="panel span-8">
+      <section v-if="w.show('arus-kas')" class="w panel" :style="w.style('arus-kas')">
         <h2>Arus Kas 6 Bulan Terakhir</h2>
         <p class="sub">
           Setor dan tarik per bulan.
@@ -263,7 +273,7 @@ onMounted(async () => {
         <p v-else class="muted">Belum ada data arus kas 6 bulan terakhir. Muat ulang halaman setelah backend tersedia.</p>
       </section>
 
-      <section class="panel span-4">
+      <section v-if="w.show('komposisi')" class="w panel" :style="w.style('komposisi')">
         <h2>Komposisi Dana</h2>
         <p class="sub">Total 6 bulan terakhir</p>
         <div v-if="flow.length" class="donut-row">
@@ -299,7 +309,7 @@ onMounted(async () => {
         <p v-else class="muted">Belum ada data komposisi dana untuk periode ini.</p>
       </section>
 
-      <section class="panel span-5">
+      <section v-if="w.show('transaksi')" class="w panel" :style="w.style('transaksi')">
         <h2>Transaksi Terbaru</h2>
         <div v-if="recent.length" class="table-scroll">
         <table>
@@ -319,8 +329,8 @@ onMounted(async () => {
         <p v-else class="muted">Belum ada transaksi tercatat. Muat ulang halaman setelah backend tersedia.</p>
       </section>
 
-      <!-- Area khusus login (v-if) -->
-      <section v-if="isLoggedIn" class="panel span-7">
+      <!-- Default khusus login; admin bisa membukanya utk tamu di CMS -->
+      <section v-if="w.show('insight')" class="w panel" :style="w.style('insight')">
         <h2>Insight Nasabah Prioritas</h2>
         <p v-if="loadingPremium" class="muted">Memuat nasabah prioritas dan laba rugi…</p>
         <div v-else class="insight">
@@ -360,12 +370,6 @@ onMounted(async () => {
             <p class="muted small">Setor dikurangi tarik, 6 bulan terakhir.</p>
           </div>
         </div>
-      </section>
-
-      <section v-else class="panel locked span-7">
-        <h2>Insight Nasabah Prioritas</h2>
-        <p class="muted">Login untuk melihat nasabah prioritas dan laba rugi per bulan. Data ini disembunyikan untuk tamu.</p>
-        <button class="btn" @click="router.push({ name: 'login', query: { redirect: '/' } })">Login untuk melihat</button>
       </section>
     </div>
   </div>

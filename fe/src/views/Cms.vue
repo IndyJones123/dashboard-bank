@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import { isAdmin } from '../stores/auth'
 import { BANK_NAME_MAX, DEFAULT_FAVICON, bankFavicon, bankLogo, bankName, saveBankName } from '../stores/branding'
 import { apiErrText } from '../report-helpers'
 import BrandImageField from './BrandImageField.vue'
+import WidgetSettings from './WidgetSettings.vue'
 import {
   DEFAULT_THEME,
   HEX6,
@@ -19,6 +20,27 @@ import {
 } from '../stores/theme'
 
 const router = useRouter()
+const route = useRoute()
+
+/* Tab CMS: General (identitas + tema) | Widget Setting. Tab aktif di ?tab
+   supaya bisa di-link dan bertahan saat reload. */
+const CMS_TABS = [
+  { id: 'general', label: 'General' },
+  { id: 'widget', label: 'Widget Setting' },
+] as const
+type CmsTab = (typeof CMS_TABS)[number]['id']
+const tab = computed<CmsTab>({
+  get: () => (route.query.tab === 'widget' ? 'widget' : 'general'),
+  set: (v) => void router.replace({ query: { ...route.query, tab: v === 'general' ? undefined : v } }),
+})
+function onTabKey(e: KeyboardEvent): void {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+  e.preventDefault()
+  const i = CMS_TABS.findIndex((t) => t.id === tab.value)
+  const next = CMS_TABS[(i + (e.key === 'ArrowRight' ? 1 : CMS_TABS.length - 1)) % CMS_TABS.length]
+  tab.value = next.id
+  document.getElementById(`cms-tab-${next.id}`)?.focus()
+}
 
 /* ---------------- Nama bank (CMS, khusus admin) ----------------
    Simpan terpisah dari tema: PUT /api/branding, berlaku untuk semua pengguna. */
@@ -141,6 +163,27 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div class="report-tabs" role="tablist" aria-label="Bagian CMS" @keydown="onTabKey">
+      <button
+        v-for="t in CMS_TABS"
+        :id="`cms-tab-${t.id}`"
+        :key="t.id"
+        type="button"
+        role="tab"
+        :class="{ on: tab === t.id }"
+        :aria-selected="tab === t.id"
+        :aria-controls="`cms-panel-${t.id}`"
+        :tabindex="tab === t.id ? 0 : -1"
+        @click="tab = t.id"
+      >{{ t.label }}</button>
+    </div>
+
+    <div v-if="tab === 'widget'" id="cms-panel-widget" role="tabpanel" aria-labelledby="cms-tab-widget">
+      <WidgetSettings />
+    </div>
+
+    <div v-show="tab === 'general'" id="cms-panel-general" role="tabpanel" aria-labelledby="cms-tab-general">
+
     <!-- Nama bank: tampil di sidebar, halaman login, dan judul tab browser -->
     <section class="panel">
       <h2>Identitas Bank</h2>
@@ -240,6 +283,7 @@ onMounted(async () => {
         </div>
       </template>
     </section>
+    </div>
   </div>
 </template>
 

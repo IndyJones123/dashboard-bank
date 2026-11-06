@@ -137,17 +137,23 @@ def login(body: LoginIn):
 
 # --- publik: boleh dilihat tanpa login
 @app.get("/api/dashboard/stats")
-def dashboard_stats():
+def dashboard_stats(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    _viewer(creds, "dashboard", ("total-simpanan", "ringkasan"))
     return db.run_query(Q.Q_DASHBOARD_STATS)[0]
 
 
 @app.get("/api/dashboard/monthly-flow")
-def monthly_flow():
+def monthly_flow(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    _viewer(creds, "dashboard", ("arus-kas", "komposisi"))
     return db.run_query(Q.Q_MONTHLY_FLOW)
 
 
 @app.get("/api/dashboard/recent-transactions")
-def recent_transactions(limit: int = Query(5, ge=1, le=50)):
+def recent_transactions(
+    limit: int = Query(5, ge=1, le=50),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    _viewer(creds, "dashboard", ("transaksi",))
     return db.run_query(Q.Q_RECENT_TRANSACTIONS, (limit,))
 
 
@@ -158,12 +164,17 @@ def accounts(limit: int = Query(10, ge=1, le=100), _me: dict = Depends(current_u
 
 
 @app.get("/api/dashboard/top-deposits")
-def top_deposits(limit: int = Query(5, ge=1, le=50), _me: dict = Depends(current_user)):
+def top_deposits(
+    limit: int = Query(5, ge=1, le=50),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    _viewer(creds, "dashboard", ("insight",))
     return db.run_query(Q.Q_TOP_DEPOSITS, (limit,))
 
 
 @app.get("/api/dashboard/monthly-profit")
-def monthly_profit(_me: dict = Depends(current_user)):
+def monthly_profit(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    _viewer(creds, "dashboard", ("insight",))
     return db.run_query(Q.Q_MONTHLY_PROFIT)
 
 
@@ -189,7 +200,9 @@ def _gl_range(kdloc: str) -> tuple[str, str]:
 
 
 @app.get("/api/gl/offices")
-def gl_offices():
+def gl_offices(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    if _viewer_soft(creds) is None and not (_guest_can("reports-aset") or _guest_can("reports-labarugi")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_LOGIN_NEEDED)
     return db.run_query(Q.Q_GL_OFFICES)
 
 
@@ -228,12 +241,14 @@ def gl_report(
     granular: str = Query("bulanan", pattern="^(bulanan|tahunan)$"),
     mulai: str | None = Query(None, pattern=r"^\d{4}$"),
     akhir: str | None = Query(None, pattern=r"^\d{4}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
     """GL report. bulanan = 1 tahun (param tahun). tahunan = RANGE tahun
     (mulai..akhir, default tahun..tahun) — 1 baris per tahun per unit."""
     sql = _GL_KINDS.get(kind)
     if sql is None:
         raise HTTPException(status_code=404, detail="Jenis laporan tidak dikenal")
+    _viewer(creds, "reports-aset" if kind.startswith("aset") else "reports-labarugi")
     kdloc1, kdloc2 = _gl_range(kdloc)
     is_aset = kind.startswith("aset")
 
@@ -285,11 +300,13 @@ def _norm_saldo_series(raw: list[dict]) -> list[dict]:
 def laporan_harian(
     tanggal: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
     kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
     """Laporan Keuangan Harian (Laporan-Keuangan-Harian.sql) — 18 baris posisi
     harian: Kas, Bank, dropping, outstanding pokok, angsuran/pelunasan
     (hari ini & bulan ini), NPL/NPF OJK+internal, pendapatan/biaya/laba rugi.
     Filter kantor dilakukan di SQL (range kodeloc); NPF (urut 12 & 14) = persen."""
+    _viewer(creds, "reports-harian")
     tglf = tanggal.replace("-", "")  # format query lama: YYYYMMDD
     rows = db.run_query(QL.Q_LAPORAN_HARIAN, (tglf, kdloc))
     return {"tanggal": tanggal, "kdloc": kdloc, "rows": rows}
@@ -299,9 +316,11 @@ def laporan_harian(
 def laporan_dpk(
     tahun: str = Query(..., pattern=r"^\d{4}$"),
     kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
     """Laporan DPK (Laporan-Keuangan-DPK.sql) — Tabungan + Deposito per kantor,
     bulanan: carry-over Des tahun lalu + 12 bulan tahun berjalan."""
+    _viewer(creds, "reports-dpk")
     tab = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_DPK_TABUNGAN, (tahun, kdloc)))
     dep = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_DPK_DEPOSITO, (tahun, kdloc)))
     return {"tahun": tahun, "kdloc": kdloc, "rows": tab + dep}
@@ -311,9 +330,11 @@ def laporan_dpk(
 def laporan_piutang(
     tahun: str = Query(..., pattern=r"^\d{4}$"),
     kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
     """Laporan Piutang (Laporan-Keuangan-Piutang.sql) — total piutang bulanan
     per kantor + rincian per golongan akun (golac) dari SETUPLOAN/SETUPASET."""
+    _viewer(creds, "reports-piutang")
     rows = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG, (tahun, kdloc)))
     golac = _norm_saldo_series(db.run_query(QL.Q_LAPORAN_PIUTANG_GOLAC, (tahun, kdloc)))
     return {"tahun": tahun, "kdloc": kdloc, "rows": rows, "golac": golac}
@@ -558,6 +579,149 @@ def put_branding(body: BrandingIn, user: dict = Depends(current_user)):
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Gagal menyimpan nama bank: {_db_detail(exc)}")
     return {"ok": True, "bank_name": name}
+
+
+# ---------------------------------------------------------------------------
+#  WIDGET LAYOUT (CMS tab "Widget Setting") — app_settings(key='widget_layout',
+#  value=JSON {"pages": {pageId: [{id, visible, span, guest}, ...]}}). Urutan array =
+#  urutan tampil. Daftar widget per halaman = registry FE (stores/widgets.ts);
+#  BE hanya memvalidasi bentuk. Halaman tanpa entri = layout default FE.
+#  GET  : publik (tamu & Present Mode ikut layout admin); gagal DB -> {}.
+#  PUT  : admin only; menimpa seluruh layout (FE kirim semua halaman).
+# ---------------------------------------------------------------------------
+
+WIDGET_KEY = "widget_layout"
+WIDGET_SPANS = (4, 5, 6, 7, 8, 12)
+_WIDGET_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+WIDGET_MAX_PAGES = 30
+WIDGET_MAX_ITEMS = 40
+# Widget yg boleh dilihat tamu bila admin belum mengatur (= perilaku lama:
+# ringkasan dashboard publik; insight & semua laporan perlu login).
+# HARUS sama dgn flag `guest` di registry FE (stores/widgets.ts).
+WIDGET_GUEST_DEFAULT: dict[str, frozenset[str]] = {
+    "dashboard": frozenset({"total-simpanan", "ringkasan", "arus-kas", "komposisi", "transaksi"}),
+}
+
+
+def _guest_default(page: str, wid: str) -> bool:
+    return wid in WIDGET_GUEST_DEFAULT.get(page, frozenset())
+
+
+def _clean_widget_pages(raw: object) -> dict[str, list[dict]]:
+    """Saring layout: id/halaman tak valid & duplikat dibuang, span di luar
+    WIDGET_SPANS jadi 12. Dipakai saat simpan DAN saat baca (data lama rusak)."""
+    out: dict[str, list[dict]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for page, items in list(raw.items())[:WIDGET_MAX_PAGES]:
+        if not (isinstance(page, str) and _WIDGET_ID.match(page) and isinstance(items, list)):
+            continue
+        seen: set[str] = set()
+        clean: list[dict] = []
+        for it in items[:WIDGET_MAX_ITEMS]:
+            if not isinstance(it, dict):
+                continue
+            wid = it.get("id")
+            if not (isinstance(wid, str) and _WIDGET_ID.match(wid)) or wid in seen:
+                continue
+            seen.add(wid)
+            span = it.get("span")
+            guest = it.get("guest")
+            clean.append({
+                "id": wid,
+                "visible": it.get("visible") is not False,
+                "span": span if isinstance(span, int) and span in WIDGET_SPANS else 12,
+                "guest": guest if isinstance(guest, bool) else _guest_default(page, wid),
+            })
+        out[page] = clean
+    return out
+
+
+def _load_widget_layout() -> dict[str, list[dict]]:
+    rows = db.run_query(Q.Q_THEME_GET, (WIDGET_KEY,))
+    if not rows:
+        return {}
+    try:
+        saved = json.loads(rows[0].get("value") or "")
+    except (ValueError, TypeError):
+        return {}
+    return _clean_widget_pages(saved.get("pages") if isinstance(saved, dict) else None)
+
+
+def _guest_can(page: str, ids: tuple[str, ...] | None = None) -> bool:
+    """Tamu boleh mengambil data halaman `page` bila ada widget (dari `ids`,
+    atau widget mana pun bila None) yang tampil DAN diizinkan untuk tamu."""
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        items = {it["id"]: it for it in _load_widget_layout().get(page, [])}
+    except Exception:
+        items = {}  # DB mati: pakai default
+    candidates = set(ids) if ids else set(items) | set(WIDGET_GUEST_DEFAULT.get(page, ()))
+    for wid in candidates:
+        it = items.get(wid)
+        if it is None:
+            if _guest_default(page, wid):
+                return True
+        elif it["visible"] and it["guest"]:
+            return True
+    return False
+
+
+def _viewer_soft(creds: HTTPAuthorizationCredentials | None) -> dict | None:
+    """Payload token bila login valid, selain itu None (tanpa error)."""
+    if creds and creds.credentials:
+        return auth.decode_token(creds.credentials)
+    return None
+
+
+_LOGIN_NEEDED = "Login diperlukan untuk melihat data ini"
+
+
+def _viewer(
+    creds: HTTPAuthorizationCredentials | None, page: str, ids: tuple[str, ...] | None = None,
+) -> dict | None:
+    """Pengguna login -> payload token. Tamu -> None bila layout widget
+    mengizinkan, selain itu 401 (FE menampilkan ajakan login)."""
+    user = _viewer_soft(creds)
+    if user is not None:
+        return user
+    if _guest_can(page, ids):
+        return None
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_LOGIN_NEEDED)
+
+
+class WidgetLayoutIn(BaseModel):
+    pages: dict[str, list[dict]]
+
+
+@app.get("/api/widgets")
+def get_widgets():
+    """Layout widget per halaman. Publik; DB tak tersedia -> {} (layout default)."""
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        return {"pages": _load_widget_layout(), "source": "db"}
+    except Exception:
+        return {"pages": {}, "source": "default"}
+
+
+@app.put("/api/widgets")
+def put_widgets(body: WidgetLayoutIn, user: dict = Depends(current_user)):
+    """Simpan layout widget semua halaman (admin only)."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Hanya admin yang boleh mengubah layout widget")
+    pages = _clean_widget_pages(body.pages)
+    value = json.dumps({"pages": pages}, separators=(",", ":"))
+    try:
+        if not db.MOCK_MODE:
+            _ensure_theme_table()
+        affected = db.run_sql(Q.Q_THEME_UPDATE, (value, WIDGET_KEY))
+        if not affected:
+            db.run_sql(Q.Q_THEME_INSERT, (WIDGET_KEY, value))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Gagal menyimpan layout widget: {_db_detail(exc)}")
+    return {"ok": True, "pages": pages}
 
 
 # ---------------------------------------------------------------------------

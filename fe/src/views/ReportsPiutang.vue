@@ -7,6 +7,11 @@ import MoreDetails from './MoreDetails.vue'
 import KantorPicker from './KantorPicker.vue'
 import DetailTable, { type DetailCol } from './DetailTable.vue'
 import Sparkline from './Sparkline.vue'
+import { useWidgets } from '../stores/widgets'
+import WidgetNotice from './WidgetNotice.vue'
+
+// Layout widget dari CMS: grafik total = 1 widget, semua grafik golongan = 1 widget
+const w = useWidgets('reports-piutang')
 
 /* ==========================================================================
    LAPORAN PIUTANG: /api/laporan/piutang (Laporan-Keuangan-Piutang.sql)
@@ -147,6 +152,15 @@ const chartData = computed(() =>
 )
 const hasChart = computed(() => chartData.value.some((c) => c.series.length > 0))
 
+/** Kelompok widget: Total Piutang sendiri, semua golongan dlm 1 panel
+    (id golongan berasal dari data, jadi tidak bisa jadi widget masing-masing). */
+const chartGroups = computed(() =>
+  [
+    { wid: 'grafik-total', title: 'Total Piutang', charts: chartData.value.filter((c) => c.id === 'piutang') },
+    { wid: 'grafik-golongan', title: 'Piutang per Golongan', charts: chartData.value.filter((c) => c.id !== 'piutang') },
+  ].filter((g) => g.charts.length),
+)
+
 /** Periode kartu: bulan TERAKHIR dgn data (saldo > 0; baris bln depan di
     snapshot parsial balik 0: existence saja bikin kartu "Posisi Des" = 0
     dan pertumbuhan -100% padahal grafik ada isinya). */
@@ -230,13 +244,14 @@ onMounted(() => {
       <span v-if="loading" class="muted small">Memuat laporan…</span>
     </div>
 
-    <section class="lead">
-      <div>
+    <WidgetNotice :w="w" />
+    <div class="wgrid">
+    <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Posisi Piutang</p>
         <p class="lead-value num">{{ loading ? '–' : formatRupiah(totalAkhir) }}</p>
         <p class="lead-note">Posisi {{ lastLabel }}</p>
-      </div>
-      <div>
+    </section>
+    <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
         <div class="lead-spark">
           <Sparkline v-if="!loading" :values="totalSeries" aria-label="Tren total piutang per bulan" />
         </div>
@@ -259,20 +274,26 @@ onMounted(() => {
             </dd>
           </div>
         </dl>
-      </div>
     </section>
 
-    <section class="panel">
+    <!-- Status muat/galat/kosong: satu panel di posisi widget grafik pertama -->
+    <section
+      v-if="(loading || error || !hasChart) && (w.show('grafik-total') || w.show('grafik-golongan'))"
+      class="w panel"
+      :style="w.style(w.show('grafik-total') ? 'grafik-total' : 'grafik-golongan')"
+    >
       <h2>Tren {{ tahun }}</h2>
-      <p class="sub">
-        Satu diagram per golongan. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.
-      </p>
       <p v-if="loading" class="muted">Memuat laporan piutang…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
-      <p v-else-if="!hasChart" class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
-      <template v-else>
-        <div v-for="c in chartData" :key="c.id" class="chart-block">
-          <h3 class="chart-title">{{ c.label }}</h3>
+      <p v-else class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
+    </section>
+    <template v-else-if="!loading && !error && hasChart">
+      <template v-for="g in chartGroups" :key="g.wid">
+      <section v-if="w.show(g.wid)" class="w panel" :style="w.style(g.wid)">
+        <h2>{{ g.title }}</h2>
+        <p class="sub">Tren {{ tahun }}. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.</p>
+        <div v-for="c in g.charts" :key="c.id" class="chart-block">
+          <h3 v-if="g.wid === 'grafik-golongan'" class="chart-title">{{ c.label }}</h3>
           <LineChart
             :labels="periodKeys.map((p) => p.label)"
             :series="c.series"
@@ -286,8 +307,10 @@ onMounted(() => {
             <DetailTable :cols="tableCols" :rows="tableRows(c.id)" :per-page="10" />
           </MoreDetails>
         </div>
+      </section>
       </template>
-    </section>
+    </template>
+    </div>
   </div>
 </template>
 

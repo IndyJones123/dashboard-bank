@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import router from '../router'
 import { REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
+import { pageViewable } from './widgets'
 
 /* ==========================================================================
    PRESENT MODE: mode fullscreen untuk slideshow presentasi.
@@ -37,13 +38,21 @@ export interface PresentSlide {
   title: string
 }
 
-/** Urutan deck Present Mode (lihat comment di atas). */
-export const PRESENT_SLIDES: PresentSlide[] = [
+/** Urutan deck Present Mode lengkap (lihat comment di atas). */
+const ALL_SLIDES: PresentSlide[] = [
   { path: '/', title: 'Dashboard' },
   ...REPORT_KINDS.map((k) => ({ path: '/reports', jenis: k as string, title: REPORT_KIND_LABELS[k] })),
   { path: '/likuiditas', title: 'Likuiditas' },
   { path: '/pembiayaan', title: 'Pembiayaan' },
 ]
+
+/** Id halaman widget utk slide (CMS > Widget Setting). */
+const slidePage = (s: PresentSlide): string =>
+  s.path === '/' ? 'dashboard' : s.path === '/reports' ? `reports-${s.jenis}` : s.path.slice(1)
+
+/** Deck aktif: tamu (tanpa login) hanya mendapat slide yang punya widget
+    yang diizinkan admin utk tamu; pengguna login mendapat deck lengkap. */
+export const PRESENT_SLIDES = computed(() => ALL_SLIDES.filter((s) => pageViewable(slidePage(s))))
 
 /** Arah transisi slide terakhir ('fwd' = maju -> konten baru masuk dari kanan). */
 export const slideDir = ref<'fwd' | 'back'>('fwd')
@@ -62,11 +71,11 @@ export interface PresentModule {
 }
 
 /** 4 modul deck, urut dgn PRESENT_SLIDES (dedupe per path). */
-export const PRESENT_MODULES: PresentModule[] = [
+export const PRESENT_MODULES = computed<PresentModule[]>(() => [
   ...new Map(
-    PRESENT_SLIDES.map((s) => [s.path, { path: s.path, label: MODULE_LABELS[s.path] ?? s.title }])
+    PRESENT_SLIDES.value.map((s) => [s.path, { path: s.path, label: MODULE_LABELS[s.path] ?? s.title }])
   ).values(),
-]
+])
 
 /** Path modul slide saat ini (dipakai sbg nilai dropdown). */
 export const currentModulePath = computed(() => router.currentRoute.value.path)
@@ -74,9 +83,9 @@ export const currentModulePath = computed(() => router.currentRoute.value.path)
 /** Index slide dari (path, ?jenis). /reports tanpa ?jenis = slide aset. */
 export function slideIndexOf(path: string, jenis: unknown): number {
   const k = typeof jenis === 'string' ? jenis : undefined
-  const exact = PRESENT_SLIDES.findIndex((s) => s.path === path && s.jenis === k)
+  const exact = PRESENT_SLIDES.value.findIndex((s) => s.path === path && s.jenis === k)
   if (exact >= 0) return exact
-  return PRESENT_SLIDES.findIndex((s) => s.path === path) // slide pertama utk path itu
+  return PRESENT_SLIDES.value.findIndex((s) => s.path === path) // slide pertama utk path itu
 }
 
 /** Index slide route saat ini (reactive: bergantung pada router.currentRoute). */
@@ -85,7 +94,7 @@ export const slideIdx = computed(() => {
   return slideIndexOf(r.path, r.query.jenis)
 })
 
-export const slideTitle = computed(() => PRESENT_SLIDES[slideIdx.value]?.title ?? '')
+export const slideTitle = computed(() => PRESENT_SLIDES.value[slideIdx.value]?.title ?? '')
 
 /** Nama transisi (atau undefined di luar Present Mode) dipakai App.vue & Reports.vue. */
 export const slideTransition = computed(() =>
@@ -94,11 +103,11 @@ export const slideTransition = computed(() =>
 
 /** Pindah ke slide i: set arah, lalu replace route/query agar cocok dgn slide. */
 export function gotoSlide(i: number): void {
-  const ti = Math.min(PRESENT_SLIDES.length - 1, Math.max(0, i))
+  const ti = Math.min(PRESENT_SLIDES.value.length - 1, Math.max(0, i))
   const cur = slideIdx.value
   if (ti === cur) return
   if (cur >= 0) slideDir.value = ti > cur ? 'fwd' : 'back'
-  const s = PRESENT_SLIDES[ti]
+  const s = PRESENT_SLIDES.value[ti]
   const query: import('vue-router').LocationQueryRaw = { ...router.currentRoute.value.query }
   if (s.jenis) query.jenis = s.jenis
   else delete query.jenis
@@ -117,8 +126,8 @@ export function nextSlide(): void {
     di slide DPK saat pilih "Laporan Keuangan"); selain itu ke slide pertamanya. */
 export function gotoModule(path: string): void {
   const cur = slideIdx.value
-  if (cur >= 0 && PRESENT_SLIDES[cur]?.path === path) return
-  gotoSlide(PRESENT_SLIDES.findIndex((s) => s.path === path))
+  if (cur >= 0 && PRESENT_SLIDES.value[cur]?.path === path) return
+  gotoSlide(PRESENT_SLIDES.value.findIndex((s) => s.path === path))
 }
 
 /* ==========================================================================
@@ -209,7 +218,7 @@ async function liveLoop(gen: number): Promise<void> {
       if (!alive()) return
     }
     // Slide terakhir wrap ke pertama -> carousel looping
-    gotoSlide(slideIdx.value >= PRESENT_SLIDES.length - 1 ? 0 : slideIdx.value + 1)
+    gotoSlide(slideIdx.value >= PRESENT_SLIDES.value.length - 1 ? 0 : slideIdx.value + 1)
     autoOpenDetails() // slide baru: "More details" dibuka otomatis saat data siap
   }
 }

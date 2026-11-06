@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { isAdmin, isLoggedIn } from './stores/auth'
+import { pageGuestOK } from './stores/widgets'
+import { REPORT_KINDS } from './report-helpers'
 import AccountsView from './views/Accounts.vue'
 import CmsView from './views/Cms.vue'
 import DashboardView from './views/Dashboard.vue'
@@ -15,10 +17,12 @@ const routes: RouteRecordRaw[] = [
   { path: '/accounts', name: 'accounts', component: AccountsView, meta: { requiresAuth: true } },
   // CMS (admin only): editor tema global palet fitlink
   { path: '/cms', name: 'cms', component: CmsView, meta: { requiresAuth: true, requiresAdmin: true } },
-  { path: '/reports', name: 'reports', component: ReportsView, meta: { requiresAuth: true } },
+  // Halaman ber-widget: tamu boleh masuk bila admin mengizinkan minimal 1
+  // widget utk tamu (CMS > Widget Setting); selain itu diarahkan ke /login
+  { path: '/reports', name: 'reports', component: ReportsView, meta: { widgetPage: 'reports' } },
   // Menu sidebar "menyusul" -> sudah ada halaman (placeholder jujur, tanpa angka)
-  { path: '/likuiditas', name: 'likuiditas', component: LikuiditasView, meta: { requiresAuth: true } },
-  { path: '/pembiayaan', name: 'pembiayaan', component: PembiayaanView, meta: { requiresAuth: true } },
+  { path: '/likuiditas', name: 'likuiditas', component: LikuiditasView, meta: { widgetPage: 'likuiditas' } },
+  { path: '/pembiayaan', name: 'pembiayaan', component: PembiayaanView, meta: { widgetPage: 'pembiayaan' } },
 ]
 
 const router = createRouter({
@@ -40,6 +44,16 @@ router.beforeEach((to) => {
   }
   if (to.meta.requiresAdmin && !isAdmin.value) {
     return { name: 'dashboard' }
+  }
+  const wp = to.meta.widgetPage as string | undefined
+  if (wp && !isLoggedIn.value) {
+    const toLogin = { name: 'login', query: { redirect: to.fullPath } }
+    if (wp !== 'reports') return pageGuestOK(wp) ? true : toLogin
+    // Laporan: jenis yg diminta tertutup utk tamu -> jenis pertama yg terbuka
+    const asked = typeof to.query.jenis === 'string' ? to.query.jenis : 'aset'
+    if (pageGuestOK(`reports-${asked}`)) return true
+    const alt = REPORT_KINDS.find((k) => pageGuestOK(`reports-${k}`))
+    return alt ? { path: '/reports', query: { ...to.query, jenis: alt } } : toLogin
   }
   return true
 })

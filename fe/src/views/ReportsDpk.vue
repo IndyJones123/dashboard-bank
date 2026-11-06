@@ -7,6 +7,12 @@ import MoreDetails from './MoreDetails.vue'
 import KantorPicker from './KantorPicker.vue'
 import DetailTable, { type DetailCol } from './DetailTable.vue'
 import Sparkline from './Sparkline.vue'
+import { useWidgets } from '../stores/widgets'
+import WidgetNotice from './WidgetNotice.vue'
+
+// Layout widget dari CMS; tiap grafik produk = 1 widget (grafik-tabungan, grafik-deposito)
+const w = useWidgets('reports-dpk')
+const chartWidget = (short: string): string => `grafik-${short.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
 
 /* ==========================================================================
    LAPORAN DPK: /api/laporan/dpk (Laporan-Keuangan-DPK.sql)
@@ -201,13 +207,14 @@ onMounted(() => {
       <span v-if="loading" class="muted small">Memuat laporan…</span>
     </div>
 
-    <section class="lead">
-      <div>
+    <WidgetNotice :w="w" />
+    <div class="wgrid">
+    <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">DPK Tabungan + Deposito</p>
         <p class="lead-value num">{{ loading ? '–' : formatRupiah(sumDes()) }}</p>
         <p class="lead-note">Posisi {{ lastLabel }}, {{ kantors.length }} kantor</p>
-      </div>
-      <div>
+    </section>
+    <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
         <div class="lead-spark">
           <Sparkline v-if="!loading" :values="sumSeries()" aria-label="Tren total DPK per bulan" />
         </div>
@@ -227,20 +234,24 @@ onMounted(() => {
             <dd class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Deposito')) }}</dd>
           </div>
         </dl>
-      </div>
     </section>
 
-    <section class="panel">
+    <!-- Status muat/galat/kosong: satu panel di posisi widget grafik pertama -->
+    <section
+      v-if="(loading || error || !hasData) && (w.show('grafik-tabungan') || w.show('grafik-deposito'))"
+      class="w panel"
+      :style="w.style(w.show('grafik-tabungan') ? 'grafik-tabungan' : 'grafik-deposito')"
+    >
       <h2>Tren {{ tahun }}</h2>
-      <p class="sub">
-        Satu diagram per produk. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.
-      </p>
       <p v-if="loading" class="muted">Memuat laporan DPK…</p>
       <p v-else-if="error" class="alert">{{ error }}</p>
-      <p v-else-if="!hasData" class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
-      <template v-else>
-        <div v-for="c in charts" :key="c.ket" class="chart-block">
-          <h3 class="chart-title">DPK {{ c.short }}</h3>
+      <p v-else class="muted">Belum ada data untuk filter ini. Coba ganti tahun atau kantor.</p>
+    </section>
+    <template v-else-if="!loading && !error && hasData">
+      <template v-for="c in charts" :key="c.ket">
+        <section v-if="w.show(chartWidget(c.short))" class="w panel" :style="w.style(chartWidget(c.short))">
+          <h2>DPK {{ c.short }}</h2>
+          <p class="sub">Tren {{ tahun }}. Warna menandai kantor{{ kantors.length > 1 ? ` (${kantors.length} kantor)` : '' }}.</p>
           <LineChart
             :labels="periodKeys.map((p) => p.label)"
             :series="c.series"
@@ -253,9 +264,10 @@ onMounted(() => {
           <MoreDetails :id="`det-${c.id}`" :open="!!detOpen[c.id]" @toggle="toggleDet(c.id)">
             <DetailTable :cols="tableCols" :rows="tableRows(c.ket)" :per-page="10" />
           </MoreDetails>
-        </div>
+        </section>
       </template>
-    </section>
+    </template>
+    </div>
   </div>
 </template>
 
