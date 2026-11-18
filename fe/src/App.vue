@@ -5,11 +5,10 @@ import { currentUser, isAdmin, isLoggedIn, logout } from './stores/auth'
 import { bankLogo, bankName } from './stores/branding'
 import {
   enterPresent, exitPresent, isPresent,
-  PRESENT_SLIDES, slideIdx, slideTitle, slideTransition,
-  PRESENT_MODULES, currentModulePath,
-  gotoSlide, gotoModule, nextSlide, prevSlide,
-  liveMode, setLive,
+  PRESENT_SLIDES, slideIdx, slideTransition,
 } from './stores/present'
+import PresentNav from './views/PresentNav.vue'
+import CinematicStage from './views/CinematicStage.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +29,13 @@ const topContext = computed(() => {
 const sideOpen = ref(false)
 watch(() => route.path, () => {
   sideOpen.value = false
+})
+
+/* Grup submenu Pembiayaan: terbuka otomatis saat masuk /pembiayaan/* */
+const inPby = computed(() => route.path.startsWith('/pembiayaan'))
+const pbyOpen = ref(inPby.value)
+watch(inPby, (v) => {
+  if (v) pbyOpen.value = true
 })
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
@@ -141,14 +147,29 @@ function onLogout() {
             <span class="side-soon">Segera</span>
           </RouterLink>
 
-          <!-- 4. Pembiayaan (halaman placeholder jujur, konten menyusul) -->
-          <RouterLink to="/pembiayaan" class="side-link" active-class="active">
-            <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h11a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM16.5 11.5h2.5" />
-            </svg>
-            Pembiayaan
-            <span class="side-soon">Segera</span>
-          </RouterLink>
+          <!-- 4. Pembiayaan: grup ber-submenu (List Saldo, Tagihan & Tunggakan).
+               Klik judul = buka/tutup; otomatis terbuka saat di /pembiayaan/* -->
+          <div class="side-group" :class="{ open: pbyOpen, current: inPby }">
+            <button
+              type="button"
+              class="side-link side-parent"
+              :aria-expanded="pbyOpen"
+              aria-controls="side-sub-pembiayaan"
+              @click="pbyOpen = !pbyOpen"
+            >
+              <svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h11a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2zM16.5 11.5h2.5" />
+              </svg>
+              Pembiayaan
+              <svg class="ico-svg side-chev" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <div v-show="pbyOpen" id="side-sub-pembiayaan" class="side-sub">
+              <RouterLink to="/pembiayaan/saldo" class="side-sublink" active-class="active">List Saldo</RouterLink>
+              <RouterLink to="/pembiayaan/tagihan" class="side-sublink" active-class="active">Tagihan &amp; Tunggakan</RouterLink>
+            </div>
+          </div>
 
           <!-- 5. CMS (khusus admin): editor tema global: hapus entry ini
                bila palet keluar dari CMS -->
@@ -190,7 +211,10 @@ function onLogout() {
               Keluar
             </button>
           </div>
-          <p class="side-credit">Powered By IBA System</p>
+          <p class="side-credit">
+            <span>Powered by</span>
+            <img src="/brand/mitrasoft.png" alt="Mitrasoft" width="1246" height="367" />
+          </p>
         </div>
       </aside>
 
@@ -206,51 +230,10 @@ function onLogout() {
       </div>
     </div>
 
-    <!-- Nav slideshow deck lintas menu: dropdown pilih modul, ‹/›, dots per
-         slide (dipisah antar menu), counter, judul. Tampil semua saat present. -->
-    <nav v-if="isPresent" class="present-nav" aria-label="Navigasi slide">
-      <select
-        class="pn-modul"
-        aria-label="Pilih modul"
-        :value="currentModulePath"
-        @change="gotoModule(($event.target as HTMLSelectElement).value)"
-      >
-        <option v-for="m in PRESENT_MODULES" :key="m.path" :value="m.path">{{ m.label }}</option>
-      </select>
-      <button
-        type="button" class="pn-btn" :disabled="slideIdx === 0"
-        aria-label="Slide sebelumnya" @click="prevSlide"
-      >‹</button>
-      <span class="pn-dots">
-        <template v-for="(s, i) in PRESENT_SLIDES" :key="i">
-          <span v-if="i > 0 && PRESENT_SLIDES[i - 1].path !== s.path" class="pn-gap" aria-hidden="true" />
-          <button
-            type="button"
-            class="pn-dot"
-            :class="{ on: i === slideIdx }"
-            :aria-label="`Slide ${i + 1}: ${s.title}`"
-            :aria-current="i === slideIdx ? 'step' : undefined"
-            @click="gotoSlide(i)"
-          />
-        </template>
-      </span>
-      <button
-        type="button" class="pn-btn" :disabled="slideIdx >= PRESENT_SLIDES.length - 1"
-        aria-label="Slide berikutnya" @click="nextSlide"
-      >›</button>
-      <!-- Toggle LIVE: carousel otomatis (dwell -> scroll pelan bila panjang
-           -> ganti slide, wrap ke pertama); mati lagi saat keluar present. -->
-      <button
-        type="button"
-        class="pn-btn pn-live"
-        :class="{ on: liveMode }"
-        :aria-pressed="liveMode"
-        :aria-label="liveMode ? 'Matikan Live Mode' : 'Aktifkan Live Mode'"
-        @click="setLive(!liveMode)"
-      ><span class="live-dot" aria-hidden="true" />Live</button>
-      <span class="pn-count num">{{ slideIdx + 1 }} / {{ PRESENT_SLIDES.length }}</span>
-      <span class="pn-title">{{ slideTitle }}</span>
-    </nav>
+    <!-- Kapsul navigasi deck (auto-sembunyi; muncul saat kursor ke bawah) -->
+    <PresentNav v-if="isPresent" />
+    <!-- Mode Cinematic: pembuka tiap slide, lalu membuka ke tampilan biasa -->
+    <CinematicStage v-if="isPresent" />
 
     <!-- Tombol keluar Present Mode (topbar tersembunyi selama present) -->
     <button

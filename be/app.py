@@ -28,6 +28,7 @@ import auth
 import db
 import queries as Q
 import queries_laporan as QL
+import queries_pembiayaan as QP
 
 app = FastAPI(title="Bank Dashboard API", version="1.0.0")
 
@@ -341,6 +342,102 @@ def laporan_piutang(
 
 
 # ---------------------------------------------------------------------------
+# PEMBIAYAAN — query dibaca langsung dari be/QueryData/pembiayaan/*.sql
+# (queries_pembiayaan.py). Tiap seksi file (lokasi & produk / AO / nasabah)
+# dijalankan apa adanya; hasilnya dikirim per seksi tanpa diolah.
+#   List Saldo          : realisasi (001/002), NPF (berjalan/bulan), OS bulan
+#   Tagihan & Tunggakan : DPD revisi, tunggakan
+# ---------------------------------------------------------------------------
+
+def _pby_run(key: str, values: dict[str, str] | None = None) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for name, (sql, order) in QP.sections(key).items():
+        params = QP.build_params(order, values or {})
+        out[name] = QP.clean_rows(db.run_query(sql, params))
+    return out
+
+
+_PERIODE = r"^\d{4}(0[1-9]|1[0-2])$"
+
+
+@app.get("/api/pembiayaan/tanggal")
+def pembiayaan_tanggal(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """Tanggal sistem (tabel Tanggal, ddmmyyyy) — acuan query 'berjalan'.
+    FE memakainya sbg nilai awal pilihan bulan/tahun. -> {"tanggal": "YYYY-MM-DD"}"""
+    if _viewer_soft(creds) is None and not (
+        _guest_can("pembiayaan-saldo") or _guest_can("pembiayaan-tagihan")
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_LOGIN_NEEDED)
+    if db.MOCK_MODE:
+        from datetime import date
+
+        return {"tanggal": date.today().isoformat()}
+    rows = db.run_query(QP.Q_TANGGAL)
+    raw = str(rows[0].get("tgl") or "").strip() if rows else ""
+    if not re.fullmatch(r"\d{8}", raw):
+        return {"tanggal": None}
+    return {"tanggal": f"{raw[4:8]}-{raw[2:4]}-{raw[0:2]}"}
+
+
+@app.get("/api/pembiayaan/realisasi")
+def pembiayaan_realisasi(
+    periode: str | None = Query(None, pattern=_PERIODE),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Realisasi pembiayaan per lokasi & produk dan per AO.
+    Tanpa periode = bulan berjalan (001, periode dari tabel Tanggal);
+    dgn periode YYYYMM = 002 Realisasi Perbulan."""
+    _viewer(creds, "pembiayaan-saldo")
+    if periode:
+        data = _pby_run("realisasi_bulan", {"@periode": periode})
+    else:
+        data = _pby_run("realisasi_berjalan")
+    return {"mode": "bulan" if periode else "berjalan", "periode": periode, **data}
+
+
+@app.get("/api/pembiayaan/npf")
+def pembiayaan_npf(
+    periode: str | None = Query(None, pattern=_PERIODE),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Kolektibilitas & NPF per lokasi & produk dan per AO handle.
+    Tanpa periode = posisi berjalan (TOFLMB); dgn periode = akhir bulan (TOFLMBEOM)."""
+    _viewer(creds, "pembiayaan-saldo")
+    if periode:
+        data = _pby_run("npf_bulan", {"@periode": periode, "@kdloc": kdloc})
+    else:
+        data = _pby_run("npf_berjalan", {"@kdloc": kdloc})
+    return {"mode": "bulan" if periode else "berjalan", "periode": periode, "kdloc": kdloc, **data}
+
+
+@app.get("/api/pembiayaan/os")
+def pembiayaan_os(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Outstanding pokok akhir bulan Jan–Des per lokasi & produk (OS Bulan)."""
+    _viewer(creds, "pembiayaan-saldo")
+    data = _pby_run("os_bulan", {"@thn": tahun, "@kdloc": kdloc})
+    return {"tahun": tahun, "kdloc": kdloc, **data}
+
+
+@app.get("/api/pembiayaan/dpd")
+def pembiayaan_dpd(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """Day Past Due (DPD Revisi) per AO dan per lokasi & produk, posisi tanggal sistem."""
+    _viewer(creds, "pembiayaan-tagihan")
+    return _pby_run("dpd")
+
+
+@app.get("/api/pembiayaan/tunggakan")
+def pembiayaan_tunggakan(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """Tunggakan per lokasi & produk, per AO, dan daftar nasabah menunggak."""
+    _viewer(creds, "pembiayaan-tagihan")
+    return _pby_run("tunggakan")
+
+
+# ---------------------------------------------------------------------------
 #  THEME GLOBAL (palet fitlink) — app_settings(key='theme', value=JSON 9 hex)
 #  GET  : publik (semua user/tamu butuh warna saat load); gagal DB -> default.
 #  PUT  : admin only; tabel dibuat idempoten saat pertama dipakai (lazy —
@@ -354,17 +451,17 @@ THEME_TOKENS = (
     "primary", "accent", "green", "red",
 )
 _HEX6 = re.compile(r"^#[0-9a-fA-F]{6}$")
-# Nilai default = palet fitlink persis seperti :root fe/src/style.css
+# Nilai default = palet 'Ledger Hijau' persis seperti :root fe/src/style.css
 DEFAULT_THEME = {
-    "bg": "#f8fafc",
+    "bg": "#f5f6f3",
     "surface": "#ffffff",
-    "surface-2": "#f2f4f6",
-    "ink": "#0f172a",
-    "muted": "#475569",
-    "primary": "#1e5fa3",
-    "accent": "#4cb5ff",
-    "green": "#22c55e",
-    "red": "#dc2626",
+    "surface-2": "#eff1ed",
+    "ink": "#15201b",
+    "muted": "#5d6963",
+    "primary": "#0f5c4e",
+    "accent": "#b08534",
+    "green": "#2e8b57",
+    "red": "#c0392b",
 }
 
 _theme_ready = False

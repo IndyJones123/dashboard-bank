@@ -5,6 +5,7 @@ import { apiErrText, formatRpSingkat } from '../report-helpers'
 import MoreDetails from './MoreDetails.vue'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
+import { sysDate } from '../pby-helpers'
 
 // Layout widget dari CMS (urutan, tampil/sembunyi, lebar)
 const w = useWidgets('reports-harian')
@@ -109,8 +110,12 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   void loadOffices()
+  // Tanggal awal = tanggal sistem core banking (tabel Tanggal); data DB bisa
+  // berhenti jauh sebelum hari ini. Gagal -> tetap kalender lokal.
+  const tgl = await sysDate()
+  if (tgl) tanggal.value = tgl
   void load()
 })
 </script>

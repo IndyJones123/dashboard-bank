@@ -6,7 +6,8 @@ import AccountsView from './views/Accounts.vue'
 import CmsView from './views/Cms.vue'
 import DashboardView from './views/Dashboard.vue'
 import LoginView from './views/Login.vue'
-import PembiayaanView from './views/Pembiayaan.vue'
+import PembiayaanSaldoView from './views/PembiayaanSaldo.vue'
+import PembiayaanTagihanView from './views/PembiayaanTagihan.vue'
 import LikuiditasView from './views/Likuiditas.vue'
 import ReportsView from './views/Reports.vue'
 
@@ -22,7 +23,10 @@ const routes: RouteRecordRaw[] = [
   { path: '/reports', name: 'reports', component: ReportsView, meta: { widgetPage: 'reports' } },
   // Menu sidebar "menyusul" -> sudah ada halaman (placeholder jujur, tanpa angka)
   { path: '/likuiditas', name: 'likuiditas', component: LikuiditasView, meta: { widgetPage: 'likuiditas' } },
-  { path: '/pembiayaan', name: 'pembiayaan', component: PembiayaanView, meta: { widgetPage: 'pembiayaan' } },
+  // Pembiayaan: 2 submenu sidebar (List Saldo, Tagihan & Tunggakan)
+  { path: '/pembiayaan', redirect: '/pembiayaan/saldo' },
+  { path: '/pembiayaan/saldo', name: 'pembiayaan-saldo', component: PembiayaanSaldoView, meta: { widgetPage: 'pembiayaan-saldo' } },
+  { path: '/pembiayaan/tagihan', name: 'pembiayaan-tagihan', component: PembiayaanTagihanView, meta: { widgetPage: 'pembiayaan-tagihan' } },
 ]
 
 const router = createRouter({

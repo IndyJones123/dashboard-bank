@@ -38,7 +38,7 @@ export const REPORT_KIND_LABELS: Record<string, string> = {
     lepas dari token CMS. Divalidasi skrip dataviz (CVD & normal-vision ΔE lulus);
     merah/hijau murni dihindari karena dipakai untuk status. */
 export const KANTOR_PALETTE = [
-  '#1e5fa3', '#c2710c', '#0f9488', '#8b5cc9', '#c03f7a', '#5f8f1e', '#2f9fd6',
+  '#0f5c4e', '#b08534', '#3b6fb6', '#8b5cc9', '#c03f7a', '#5f8f1e', '#2f9fd6',
 ]
 
 /** Warna kantor dari daftar kdloc terurut (indentik antar laporan). */

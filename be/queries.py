@@ -491,6 +491,10 @@ def mock_rows(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
         return _mock_dpk(params, name)
     if name == "piutang_golac":
         return _mock_piutang_golac(params)
+    if name and name.startswith("pby_"):
+        from queries_pembiayaan import mock_rows as pby_mock  # lokal, hindari circular import
+
+        return pby_mock(name, params)
     if name == "theme_get":
         value = _MOCK_SETTINGS.get(str(params[0])) if params else None
         return [{"value": value}] if value else []

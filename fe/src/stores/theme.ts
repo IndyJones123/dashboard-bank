@@ -25,6 +25,19 @@ export type ThemeKey = (typeof THEME_TOKENS)[number]['key']
 export type ThemeTokens = Record<ThemeKey, string>
 
 export const DEFAULT_THEME: ThemeTokens = {
+  bg: '#f5f6f3',
+  surface: '#ffffff',
+  'surface-2': '#eff1ed',
+  ink: '#15201b',
+  muted: '#5d6963',
+  primary: '#0f5c4e',
+  accent: '#b08534',
+  green: '#2e8b57',
+  red: '#c0392b',
+}
+
+/** Preset "Biru fitlink": palet default sebelum redesain Ledger Hijau. */
+export const FITLINK_THEME: ThemeTokens = {
   bg: '#f8fafc',
   surface: '#ffffff',
   'surface-2': '#f2f4f6',
@@ -77,9 +90,9 @@ export function applyTheme(tokens: Partial<ThemeTokens>): void {
   }
   // Turunan primary (gelap utk hover, tint/ring utk kontrol)
   root.style.setProperty('--primary-dark', shade(t.primary, -0.22))
-  root.style.setProperty('--primary-10', rgba(t.primary, 0.1))
-  root.style.setProperty('--primary-40', rgba(t.primary, 0.4))
-  root.style.setProperty('--primary-ring', rgba(t.primary, 0.3))
+  root.style.setProperty('--primary-10', rgba(t.primary, 0.08))
+  root.style.setProperty('--primary-40', rgba(t.primary, 0.32))
+  root.style.setProperty('--primary-ring', rgba(t.primary, 0.28))
   // Turunan green/red (chip, fill batang, garis, focus di permukaan gelap)
   root.style.setProperty('--green-dark', shade(t.green, -0.55))
   root.style.setProperty('--green-fill', rgba(t.green, 0.85))
@@ -89,11 +102,12 @@ export function applyTheme(tokens: Partial<ThemeTokens>): void {
   root.style.setProperty('--red-dark', shade(t.red, -0.2))
   // Turunan ink: teks + hairline struktural dari keluarga ink
   root.style.setProperty('--text', t.ink)
-  root.style.setProperty('--border', rgba(t.ink, 0.08))
-  root.style.setProperty('--border-strong', rgba(t.ink, 0.12))
-  root.style.setProperty('--ink-4', rgba(t.ink, 0.04))
-  root.style.setProperty('--ink-10', rgba(t.ink, 0.1))
-  root.style.setProperty('--ink-16', rgba(t.ink, 0.16))
+  root.style.setProperty('--muted-2', shade(t.muted, -0.35))
+  root.style.setProperty('--border', rgba(t.ink, 0.07))
+  root.style.setProperty('--border-strong', rgba(t.ink, 0.11))
+  root.style.setProperty('--ink-4', rgba(t.ink, 0.035))
+  root.style.setProperty('--ink-10', rgba(t.ink, 0.08))
+  root.style.setProperty('--ink-16', rgba(t.ink, 0.15))
   // Turunan surface-2 -> surface-3 / canvas-dim (permukaan semakin tua)
   root.style.setProperty('--surface-3', shade(t['surface-2'], -0.04))
   root.style.setProperty('--canvas-dim', shade(t['surface-2'], -0.16))

@@ -115,10 +115,28 @@ export const WIDGET_PAGES: PageDef[] = [
     widgets: [{ id: 'info', label: 'Informasi halaman', kind: 'info', span: 12 }],
   },
   {
-    id: 'pembiayaan',
-    label: 'Pembiayaan',
-    to: '/pembiayaan',
-    widgets: [{ id: 'info', label: 'Informasi halaman', kind: 'info', span: 12 }],
+    id: 'pembiayaan-saldo',
+    label: 'Pembiayaan: List Saldo',
+    to: '/pembiayaan/saldo',
+    widgets: [
+      { id: 'angka-utama', label: 'Outstanding pembiayaan', kind: 'angka', span: 7 },
+      { id: 'ringkasan', label: 'NPF dan realisasi', kind: 'ringkasan', span: 5 },
+      { id: 'kolektibilitas', label: 'Kolektibilitas & NPF', kind: 'tabel', span: 12 },
+      { id: 'realisasi', label: 'Realisasi pembiayaan', kind: 'tabel', span: 12 },
+      { id: 'os-bulanan', label: 'Outstanding per bulan', kind: 'grafik', span: 12 },
+    ],
+  },
+  {
+    id: 'pembiayaan-tagihan',
+    label: 'Pembiayaan: Tagihan & Tunggakan',
+    to: '/pembiayaan/tagihan',
+    widgets: [
+      { id: 'angka-utama', label: 'Total tunggakan', kind: 'angka', span: 7 },
+      { id: 'ringkasan', label: 'Pokok, margin, DPD > 90', kind: 'ringkasan', span: 5 },
+      { id: 'dpd', label: 'Umur tunggakan (DPD)', kind: 'tabel', span: 12 },
+      { id: 'tunggakan', label: 'Tunggakan per kantor/AO', kind: 'tabel', span: 12 },
+      { id: 'nasabah', label: 'Nasabah menunggak', kind: 'tabel', span: 12 },
+    ],
   },
 ]
 

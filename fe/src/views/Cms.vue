@@ -10,6 +10,7 @@ import WidgetSettings from './WidgetSettings.vue'
 import {
   DEFAULT_THEME,
   HEX6,
+  FITLINK_THEME,
   LEGACY_THEME,
   THEME_TOKENS,
   applyTheme,
@@ -236,7 +237,8 @@ onMounted(async () => {
         <div class="theme-row">
           <span class="label">Preset cepat</span>
           <span class="theme-actions">
-            <button type="button" class="btn-outline" @click="usePreset(DEFAULT_THEME)">Fitlink (default)</button>
+            <button type="button" class="btn-outline" @click="usePreset(DEFAULT_THEME)">Ledger Hijau (default)</button>
+            <button type="button" class="btn-outline" @click="usePreset(FITLINK_THEME)">Biru fitlink</button>
             <button type="button" class="btn-outline" @click="usePreset(LEGACY_THEME)">Navy legacy</button>
           </span>
         </div>

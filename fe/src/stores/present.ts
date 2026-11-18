@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { interruptCinematic, playCinematicPage, presentStyle, stopCinematic } from './cinema'
 import router from '../router'
 import { REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
 import { pageViewable } from './widgets'
@@ -18,7 +19,7 @@ import { pageViewable } from './widgets'
    DECK SLIDE (lintas menu): urutan slide = menu sidebar x jenis laporan,
    8 slide:
      0 Dashboard | 1-5 Laporan Keuangan (jenis via /reports?jenis=...) |
-     6 Likuiditas | 7 Pembiayaan
+     6 Likuiditas | 7 Pembiayaan List Saldo | 8 Pembiayaan Tagihan & Tunggakan
    Navigasi = router replace (URL selalu mencerminkan slide -> deep-link
    & tombol back/forward browser ikut jalan), transisi ala PowerPoint
    (slide-fwd/slide-back) arah-tergantung di kedua level:
@@ -43,12 +44,13 @@ const ALL_SLIDES: PresentSlide[] = [
   { path: '/', title: 'Dashboard' },
   ...REPORT_KINDS.map((k) => ({ path: '/reports', jenis: k as string, title: REPORT_KIND_LABELS[k] })),
   { path: '/likuiditas', title: 'Likuiditas' },
-  { path: '/pembiayaan', title: 'Pembiayaan' },
+  { path: '/pembiayaan/saldo', title: 'List Saldo' },
+  { path: '/pembiayaan/tagihan', title: 'Tagihan & Tunggakan' },
 ]
 
 /** Id halaman widget utk slide (CMS > Widget Setting). */
 const slidePage = (s: PresentSlide): string =>
-  s.path === '/' ? 'dashboard' : s.path === '/reports' ? `reports-${s.jenis}` : s.path.slice(1)
+  s.path === '/' ? 'dashboard' : s.path === '/reports' ? `reports-${s.jenis}` : s.path.slice(1).replace(/\//g, '-')
 
 /** Deck aktif: tamu (tanpa login) hanya mendapat slide yang punya widget
     yang diizinkan admin utk tamu; pengguna login mendapat deck lengkap. */
@@ -62,7 +64,8 @@ const MODULE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
   '/reports': 'Laporan Keuangan',
   '/likuiditas': 'Likuiditas',
-  '/pembiayaan': 'Pembiayaan',
+  '/pembiayaan/saldo': 'Pembiayaan: List Saldo',
+  '/pembiayaan/tagihan': 'Pembiayaan: Tagihan & Tunggakan',
 }
 
 export interface PresentModule {
@@ -112,6 +115,9 @@ export function gotoSlide(i: number): void {
   if (s.jenis) query.jenis = s.jenis
   else delete query.jenis
   void router.replace({ path: s.path, query })
+  // Live cinematic: halaman yang sedang diputar disela; loop Live memutar
+  // ulang adegan utk halaman baru ini (no-op bila tidak ada yg diputar)
+  interruptCinematic()
 }
 
 export function prevSlide(): void {
@@ -208,17 +214,32 @@ function liveScrollBottom(gen: number): Promise<boolean> {
 
 async function liveLoop(gen: number): Promise<void> {
   const alive = (): boolean => liveMode.value && gen === liveGen
+  const nextIdx = (): number => (slideIdx.value >= PRESENT_SLIDES.value.length - 1 ? 0 : slideIdx.value + 1)
   while (alive()) {
+    // ---- Mode Cinematic: semua adegan halaman ini di panggung, lalu lanjut
+    if (presentStyle.value === 'cinematic') {
+      const r = await playCinematicPage()
+      if (!alive()) return
+      if (r === 'stop') continue // disela: putar ulang utk halaman/mode terkini
+      gotoSlide(nextIdx())
+      continue
+    }
+    // ---- Mode Biasa: halaman normal (perilaku Live semula)
+    stopCinematic()
+    const changed = (): boolean => presentStyle.value !== 'biasa'
     await liveSleep(LIVE_DWELL)
     if (!alive()) return
+    if (changed()) continue
     const scrolled = await liveScrollBottom(gen)
     if (!alive()) return
+    if (changed()) continue
     if (scrolled) {
       await liveSleep(LIVE_TAIL)
       if (!alive()) return
+      if (changed()) continue
     }
     // Slide terakhir wrap ke pertama -> carousel looping
-    gotoSlide(slideIdx.value >= PRESENT_SLIDES.value.length - 1 ? 0 : slideIdx.value + 1)
+    gotoSlide(nextIdx())
     autoOpenDetails() // slide baru: "More details" dibuka otomatis saat data siap
   }
 }
@@ -258,7 +279,17 @@ export function setLive(on: boolean): void {
   if (on) {
     autoOpenDetails() // slide pertama saat Live dinyalakan
     void liveLoop(liveGen)
+  } else {
+    stopCinematic()
   }
+}
+
+/** Bangunkan tunggu/scroll Live yang sedang berjalan agar loop segera
+    membaca ulang mode (dipakai saat toggle Biasa/Cinematic diganti). */
+export function nudgeLive(): void {
+  const pending = liveWakers
+  liveWakers = []
+  pending.forEach((w) => w())
 }
 
 export async function enterPresent(): Promise<void> {
@@ -289,6 +320,7 @@ let dirHooked = false
 export function exitPresent(): void {
   if (!isPresent.value) return
   setLive(false) // carousel berhenti saat keluar present (jg lewat Esc/exit fullscreen)
+  stopCinematic()
   isPresent.value = false
   document.body.classList.remove('present-mode')
   if (document.fullscreenElement) {

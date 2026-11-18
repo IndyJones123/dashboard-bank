@@ -66,6 +66,11 @@ def get_conn():
 
 
 def _rows(cur) -> list[dict[str, Any]]:
+    # Batch DECLARE/SET bisa mendahului SELECT dgn hasil tanpa kolom
+    # (rowcount) -> lompati sampai result set pertama yang punya kolom.
+    while cur.description is None:
+        if not cur.nextset():
+            return []
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 

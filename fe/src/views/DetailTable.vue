@@ -81,7 +81,7 @@ const titleOf = (v: unknown): string | undefined =>
         type="button" :disabled="page <= 1"
         aria-label="Halaman sebelumnya" @click="page--"
       >‹</button>
-      <span class="pg-info">Halaman {{ page }} / {{ pageCount }} · {{ range }}</span>
+      <span class="pg-info">Halaman {{ page }} dari {{ pageCount }}, {{ range }}</span>
       <button
         type="button" :disabled="page >= pageCount"
         aria-label="Halaman berikutnya" @click="page++"
@@ -105,20 +105,20 @@ table td {
   color: var(--muted);
 }
 .pager button {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: 50%;
   background: var(--surface);
-  color: var(--primary);
+  color: var(--ink);
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
 }
-.pager button:hover:not(:disabled) { border-color: var(--primary); }
+.pager button:hover:not(:disabled) { background: var(--surface-2); }
 .pager button:disabled { opacity: 0.4; cursor: default; }
 .pg-info { font-variant-numeric: tabular-nums; }
 </style>
