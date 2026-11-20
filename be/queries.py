@@ -373,10 +373,23 @@ _MOCK_PROFIT = [
 # Saldo akhir bulan dihitung deterministik dari seed agar stabil antar request.
 # ---------------------------------------------------------------------------
 
+# Kantor 04–10: bobot relatif thd kantor pusat (01); skala aset/laba ikut bobot.
+_EXTRA_OFFICES = [("04", 0.62), ("05", 0.45), ("06", 0.38), ("07", 0.33), ("08", 0.41), ("09", 0.36), ("10", 0.29)]
+
+
+def _gl_base(kdloc: str, w: float) -> dict[str, Any]:
+    return {
+        "kdloc": kdloc,
+        "aset_base": int(1_420_600_000_000 * w), "aset_grow": int(8_500_000_000 * w),
+        "pl_base": int(12_400_000_000 * w), "pl_grow": int(320_000_000 * w),
+    }
+
+
 _MOCK_GL_BASE = [
     {"kdloc": "01", "aset_base": 1_420_600_000_000, "aset_grow": 8_500_000_000, "pl_base": 12_400_000_000, "pl_grow": 320_000_000},
     {"kdloc": "02", "aset_base": 891_300_000_000, "aset_grow": 5_100_000_000, "pl_base": 7_800_000_000, "pl_grow": 190_000_000},
     {"kdloc": "03", "aset_base": 655_900_000_000, "aset_grow": 3_700_000_000, "pl_base": 5_600_000_000, "pl_grow": 140_000_000},
+    *[_gl_base(k, w) for k, w in _EXTRA_OFFICES],
 ]
 
 _MOCK_GL_KET = {
@@ -518,8 +531,8 @@ def mock_write(sql: str, params: tuple | list = ()) -> int:
 # Deterministik dari seed (tglf / yyyy) supaya stabil antar request.
 # ---------------------------------------------------------------------------
 
-_OFFICES = ("01", "02", "03")
-_OFFICE_W = {"01": 1.0, "02": 0.72, "03": 0.55}  # bobot per kantor utk agregasi konsol
+_OFFICE_W = {"01": 1.0, "02": 0.72, "03": 0.55, **dict(_EXTRA_OFFICES)}  # bobot per kantor utk agregasi konsol
+_OFFICES = tuple(_OFFICE_W)
 
 
 def _offices_from(params: tuple | list) -> list[str]:

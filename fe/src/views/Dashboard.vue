@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import api, { formatRupiah } from '../api'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
+import RpValue from './RpValue.vue'
 
 interface Stats {
   total_nasabah: number
@@ -204,7 +205,7 @@ onMounted(async () => {
       <!-- Angka utama: Total Simpanan jadi fokus, 3 angka lain sebagai rincian -->
       <section v-if="stats && w.show('total-simpanan')" class="w lead-part hero" :style="w.style('total-simpanan')">
         <p class="lead-label">Total Simpanan</p>
-        <p class="lead-value num">{{ formatRupiah(stats.total_simpanan) }}</p>
+        <p class="lead-value num"><RpValue :value="stats.total_simpanan" /></p>
         <p class="lead-note">Akumulasi seluruh rekening</p>
       </section>
       <dl v-if="stats && w.show('ringkasan')" class="w lead-part ledger" :style="w.style('ringkasan')">
@@ -218,7 +219,7 @@ onMounted(async () => {
         </div>
         <div>
           <dt>Kredit Berjalan <small>Sisa pokok</small></dt>
-          <dd class="num">{{ formatRupiah(stats.kredit_berjalan) }}</dd>
+          <dd class="num"><RpValue :value="stats.kredit_berjalan" /></dd>
         </div>
       </dl>
 
@@ -302,8 +303,8 @@ onMounted(async () => {
             </svg>
           </div>
           <ul class="donut-list">
-            <li><span><i class="swatch s-primary" />Setor</span><strong class="num">{{ formatRupiah(donut.setor) }}</strong></li>
-            <li><span><i class="swatch s-accent" />Tarik</span><strong class="num">{{ formatRupiah(donut.tarik) }}</strong></li>
+            <li><span><i class="swatch s-primary" />Setor</span><strong class="num"><RpValue :value="donut.setor" /></strong></li>
+            <li><span><i class="swatch s-accent" />Tarik</span><strong class="num"><RpValue :value="donut.tarik" /></strong></li>
           </ul>
         </div>
         <p v-else class="muted">Belum ada data komposisi dana untuk periode ini.</p>
@@ -321,7 +322,7 @@ onMounted(async () => {
               <td class="hide-sm">{{ t.tanggal }}</td>
               <td>{{ t.nasabah }}<span class="cell-sub show-sm">{{ t.tanggal }}</span></td>
               <td><span :class="['badge', t.jenis === 'SETOR' ? 'in' : 'out']">{{ t.jenis }}</span></td>
-              <td class="ta-r num">{{ formatRupiah(t.nominal) }}</td>
+              <td class="ta-r num"><RpValue :value="t.nominal" /></td>
             </tr>
           </tbody>
         </table>
@@ -345,7 +346,7 @@ onMounted(async () => {
                 <tr v-for="t in topDeposits" :key="t.nama">
                   <td>{{ t.nama }}<span class="cell-sub">{{ t.kota }}</span></td>
                   <td class="ta-r num">{{ t.jumlah_rekening }}</td>
-                  <td class="ta-r num">{{ formatRupiah(t.total_saldo) }}</td>
+                  <td class="ta-r num"><RpValue :value="t.total_saldo" /></td>
                 </tr>
               </tbody>
             </table>

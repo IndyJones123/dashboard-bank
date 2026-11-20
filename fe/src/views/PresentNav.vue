@@ -537,12 +537,13 @@ const groups = computed(() => {
 }
 
 /* Penghitung + judul slide */
-.pn-meta { display: inline-flex; align-items: baseline; gap: 0.6rem; min-width: 0; padding-right: 0.4rem; }
+.pn-meta { display: inline-flex; align-items: baseline; gap: 0.6rem; min-width: 0; padding-right: 0.4rem; flex: none; }
 .pn-count { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pn-of { color: var(--pn-muted); font-weight: 500; }
 .pn-title {
   display: inline-block;
-  max-width: 14rem;
+  flex: none;
+  max-width: 17rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -575,10 +576,14 @@ const groups = computed(() => {
   top: 7px;
   height: 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 28%, transparent);
-  transition: background 0.2s ease;
+  background: color-mix(in srgb, var(--ink) 50%, transparent);
+  /* Tersembunyi saat diam agar tidak menimpa isi slide; muncul saat kursor
+     mendekat ke tepi bawah (area klik tetap ada) */
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
-.pn-hint:hover::before { background: color-mix(in srgb, var(--ink) 50%, transparent); }
+.pn-hint:hover::before,
+.pn-hint:focus-visible::before { opacity: 1; }
 .pn-hint-enter-active { transition: opacity 0.4s ease 0.3s; }
 .pn-hint-leave-active { transition: opacity 0.15s ease; }
 .pn-hint-enter-from,

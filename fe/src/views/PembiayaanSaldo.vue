@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import api, { formatRupiah } from '../api'
+import api from '../api'
 import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
+import RpValue from './RpValue.vue'
 import {
   KOL, RISK_COLORS, type Row, dateLabel, intText, lastMonth, monthLabel, npfOf, num, pctText, sumOf, sysDate, toPeriode,
 } from '../pby-helpers'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
-import PbyTable, { type PbyCol } from './PbyTable.vue'
+import type { PbyCol } from './PbyTable.vue'
+import PbyList from './PbyList.vue'
 import PbyStack, { type StackSeg } from './PbyStack.vue'
 import LineChart, { type LineSerie } from './LineChart.vue'
 
@@ -185,7 +187,7 @@ onMounted(async () => {
     <div class="wgrid">
       <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Outstanding Pembiayaan</p>
-        <p class="lead-value num">{{ npf.loading ? '–' : formatRupiah(Math.round(totalOs)) }}</p>
+        <p class="lead-value num"><RpValue :value="npf.loading ? null : Math.round(totalOs)" /></p>
         <p class="lead-note">{{ periodText(npf, 'Posisi berjalan') }}, {{ intText(npf.lokasi.length) }} kombinasi kantor dan produk</p>
       </section>
       <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
@@ -196,7 +198,7 @@ onMounted(async () => {
           </div>
           <div>
             <dt>Realisasi <small>{{ real.mode === 'bulan' ? monthLabel(real.bulan) : 'Bulan berjalan' }}, {{ real.loading ? '–' : intText(realNoa) }} NOA</small></dt>
-            <dd class="num">{{ real.loading ? '–' : formatRupiah(Math.round(realPlf)) }}</dd>
+            <dd class="num"><RpValue :value="real.loading ? null : Math.round(realPlf)" /></dd>
           </div>
         </dl>
       </section>
@@ -227,8 +229,8 @@ onMounted(async () => {
         <p v-else-if="npf.error" class="alert">{{ npf.error }}</p>
         <template v-else>
           <PbyStack :segs="kolSegs" label="Komposisi outstanding per kolektibilitas" />
-          <PbyTable
-            :cols="npfCols" :rows="npfRows" :total-override="npfOverride"
+          <PbyList
+            :cols="npfCols" :rows="npfRows" :total-override="npfOverride" head-key="os"
             :subtotal-by="npf.view === 'lokasi' ? 'kdloc' : undefined"
             :subtotal-label="subLabel('nmcabang')"
           />
@@ -262,7 +264,7 @@ onMounted(async () => {
         </div>
         <p v-if="real.loading" class="muted">Memuat realisasi…</p>
         <p v-else-if="real.error" class="alert">{{ real.error }}</p>
-        <PbyTable
+        <PbyList
           v-else :cols="realCols" :rows="realRows"
           :subtotal-by="real.view === 'lokasi' ? 'kdloc' : undefined"
           :subtotal-label="subLabel('nmkantor')"
@@ -296,7 +298,7 @@ onMounted(async () => {
             :aria-label="`Grafik outstanding pembiayaan per kantor ${osTahun}`"
           />
           <p class="note">Garis = total semua produk per kantor. Rincian per produk di tabel.</p>
-          <PbyTable :cols="osCols" :rows="os.rows" subtotal-by="kdloc" :subtotal-label="subLabel('nmcabang')" />
+          <PbyList :cols="osCols" :rows="os.rows" head-key="bln12" subtotal-by="kdloc" :subtotal-label="subLabel('nmcabang')" />
         </template>
       </section>
     </div>

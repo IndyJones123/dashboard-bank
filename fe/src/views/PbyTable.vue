@@ -16,10 +16,11 @@ export interface PbyCol {
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import RpValue from './RpValue.vue'
 
 /* ==========================================================================
    PbyTable: tabel laporan Pembiayaan. Nilai apa adanya dari query, hanya
-   diformat (Rupiah penuh tanpa desimal, NOA bilangan bulat, NPF 2 desimal).
+   diformat (Rupiah penuh tanpa desimal; > 11 digit ringkas M + tombol nilai lengkap, NOA bilangan bulat, NPF 2 desimal).
    - subtotalBy: sisipkan subtotal tiap pergantian nilai kolom itu (urutan
      baris dari ORDER BY query, tidak diurut ulang)
    - total: baris jumlah di footer; `totalOverride` utk kolom turunan (NPF %)
@@ -143,10 +144,10 @@ const rangeText = computed(() => {
             <td v-for="(c, ci) in cols" :key="c.key" :class="{ 'ta-r': isNum(c) }">
               <template v-if="ln.kind === 'sub'">
                 <template v-if="ci === 0">{{ ln.label }}</template>
-                <template v-else-if="ln.data[c.key] !== undefined">{{ fmt(ln.data[c.key], c.fmt) }}</template>
+                <template v-else-if="ln.data[c.key] !== undefined"><RpValue v-if="c.fmt === 'rp'" :value="ln.data[c.key] as number" bare /><template v-else>{{ fmt(ln.data[c.key], c.fmt) }}</template></template>
               </template>
               <template v-else>
-                {{ fmt(ln.data[c.key], c.fmt) }}
+                <RpValue v-if="c.fmt === 'rp'" :value="ln.data[c.key] as number" bare /><template v-else>{{ fmt(ln.data[c.key], c.fmt) }}</template>
                 <span v-if="c.sub && ln.data[c.sub] != null" class="cell-sub">{{ ln.data[c.sub] }}</span>
               </template>
             </td>
@@ -159,7 +160,7 @@ const rangeText = computed(() => {
           <tr>
             <td v-for="(c, ci) in cols" :key="c.key" :class="{ 'ta-r': isNum(c) }">
               <template v-if="ci === 0">Total</template>
-              <template v-else-if="totalRow[c.key] !== undefined">{{ fmt(totalRow[c.key], c.fmt) }}</template>
+              <template v-else-if="totalRow[c.key] !== undefined"><RpValue v-if="c.fmt === 'rp'" :value="totalRow[c.key] as number" bare /><template v-else>{{ fmt(totalRow[c.key], c.fmt) }}</template></template>
             </td>
           </tr>
         </tfoot>

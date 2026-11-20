@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useId, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { formatRupiah } from '../api'
 import ReportsHarian from './ReportsHarian.vue'
@@ -7,10 +7,12 @@ import ReportsDpk from './ReportsDpk.vue'
 import ReportsPiutang from './ReportsPiutang.vue'
 import MoreDetails from './MoreDetails.vue'
 import Sparkline from './Sparkline.vue'
-import { formatRpSingkat, kantorColor, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
+import LineChart, { type LineSerie } from './LineChart.vue'
+import { kantorColor, REPORT_KINDS, REPORT_KIND_LABELS } from '../report-helpers'
 import { slideTransition } from '../stores/present'
 import { pageViewable, useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
+import RpValue from './RpValue.vue'
 
 /* ==========================================================================
    LAPORAN KEUANGAN: 5 jenis laporan:
@@ -296,10 +298,7 @@ interface DiagLine {
 interface DiagState {
   lines: DiagLine[]
   xTicks: { x: number; label: string }[]
-  grid: { y: number; label: string }[]
   aria: string
-  scale: number
-  suffix: string
 }
 const glDiag = computed<DiagState | null>(() => {
   const sel = glCompareSel.value
@@ -339,8 +338,6 @@ const glDiag = computed<DiagState | null>(() => {
   const yMax = maxVal > 0 ? maxVal * 1.05 : 1
   const X = (j: number) => (n <= 1 ? (X0 + X1) / 2 : X0 + (j * (X1 - X0)) / (n - 1))
   const Y = (v: number) => Y1 - (v / yMax) * (Y1 - Y0)
-  const scale = yMax >= 1e12 ? 1e12 : yMax >= 1e9 ? 1e9 : 1e6
-  const suffix = scale === 1e12 ? 'T' : scale === 1e9 ? 'M' : 'Jt'
   return {
     lines: src.map((l) => ({
       kdloc: l.kdloc,
@@ -357,32 +354,22 @@ const glDiag = computed<DiagState | null>(() => {
       if (glGranular.value === 'tahunan') return { x: X(j), label: r.thn }
       return { x: X(j), label: j === 0 || j === n - 1 ? glXLabel(r, true) : shortMonth(r.bln) }
     }),
-    grid: [0, 1, 2, 3, 4].map((g) => ({
-      y: Y1 - (g / 4) * (Y1 - Y0),
-      label:
-        g === 0
-          ? '0'
-          : `${((yMax * g) / 4 / scale).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${suffix}`,
-    })),
     aria: `Diagram garis komparasi ${glTitle.value} ${glPeriodText.value} antar BPRS ${sel.join(', ')}`,
-    scale,
-    suffix,
   }
 })
-
-/* Animasi draw diagram komparasi (kiri -> kanan, awal -> akhir periode):
-   clip rect melebar; key = daftar kantor terpilih -> draw ulang saat
-   pilihan komparasi ganti (node defs di-remount). uid unik per instance
-   (Vue 3.5 useId) agar 2 instance transisi slide tak bentrok id. */
-const diagUid = useId()
-const diagDrawKey = computed(() => glDiag.value?.lines.map((l) => l.kdloc).join('|') ?? 'none')
-
-/** Label nilai per titik diagram komparasi: format sumbu diagram (Jt/M/T), ≤2 desimal. */
-function glDiagLabel(v: number): string {
+/** Sumbu & seri untuk LineChart (TradingView): nilai per periode, null = kosong. */
+const glDiagLabels = computed(() => glDiag.value?.xTicks.map((t) => t.label) ?? [])
+const glDiagSeries = computed<LineSerie[]>(() => {
   const d = glDiag.value
-  if (!d) return ''
-  return `${(v / d.scale).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${d.suffix}`
-}
+  if (!d) return []
+  return d.lines.map((l) => ({
+    key: l.kdloc,
+    label: `BPRS ${l.kdloc}`,
+    color: l.color,
+    values: d.xTicks.map((t) => l.pts.find((p) => p.x === t.x)?.saldo ?? null),
+  }))
+})
+
 
 // Baris grafik menu 1: bulanan -> 12 bulan tahun berjalan (carry-over utk baseline);
 // tahunan -> 1 baris per tahun dlm range. Carry-over = thn < tahun berjalan (aman utk DB asli).
@@ -397,9 +384,9 @@ const glChartRows = computed(() =>
 )
 const glMax = computed(() => Math.max(1, ...glChartRows.value.map((r) => r.saldo)))
 
-// Satuan sumbu otomatis: Jt / M (miliar) / T (triliun), angka tetap tabular
-const glScale = computed(() => (glMax.value >= 1e12 ? 1e12 : glMax.value >= 1e9 ? 1e9 : 1e6))
-const glSuffix = computed(() => (glScale.value === 1e12 ? 'T' : glScale.value === 1e9 ? 'M' : 'Jt'))
+// Satuan sumbu otomatis: Jt / M (miliar); triliun pun tetap M (aturan > 11 digit)
+const glScale = computed(() => (glMax.value >= 1e9 ? 1e9 : 1e6))
+const glSuffix = computed(() => (glScale.value === 1e9 ? 'M' : 'Jt'))
 
 // Aset = posisi (stok) -> ambil posisi terakhir. Laba rugi = arus -> jumlahkan.
 const glIsArus = computed(() => !glIsAset.value)
@@ -442,10 +429,8 @@ function glXLabel(r: GlRow, withYear: boolean): string {
   return withYear ? `${m} '${r.thn.slice(2)}` : m
 }
 function glCompact(v: number): string {
-  const n = (v / glScale.value).toLocaleString('id-ID', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+  const x = v / glScale.value
+  const n = x.toLocaleString('id-ID', { maximumFractionDigits: Math.abs(x) >= 100 ? 1 : 2 })
   return `${n} ${glSuffix.value}`
 }
 
@@ -461,7 +446,7 @@ const GB = { W: 1040, H: 300, L: 64, R: 1030, T: 26, B: 264 }
 const glSvgGrid = computed(() =>
   [0, 1, 2, 3, 4].map((g) => ({
     y: GB.T + (g * (GB.B - GB.T)) / 4,
-    label: `${((glMax.value * (4 - g)) / 4 / glScale.value).toFixed(1)}${glSuffix.value}`,
+    label: `${((glMax.value * (4 - g)) / 4 / glScale.value).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${glSuffix.value}`,
   })),
 )
 const glSvgBars = computed(() => {
@@ -568,12 +553,6 @@ function pctStr(p: number | null): string {
   if (p === null) return '–'
   return (p > 0 ? '+' : '') + p.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
 }
-function absStr(a: number | null): string {
-  if (a === null) return '–'
-  if (a > 0) return `+ ${formatRupiah(a)}`
-  if (a < 0) return `- ${formatRupiah(Math.abs(a))}`
-  return formatRupiah(0)
-}
 function statusClass(g: Growth): string {
   return `chip ${g.status === 'up' ? 'up' : g.status === 'down' ? 'down' : 'neutral'}`
 }
@@ -657,7 +636,7 @@ onMounted(async () => {
     <div v-if="isGl" class="wgrid">
     <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">{{ glTotalLabel }}</p>
-        <p class="lead-value num">{{ glLoading ? '–' : formatRupiah(glTotal) }}</p>
+        <p class="lead-value num"><RpValue :value="glLoading ? null : glTotal" /></p>
         <p class="lead-note">
           <span v-if="glLastDelta !== null" :class="['chip', glLastDelta >= 0 ? 'up' : 'down']">
             {{ glLastDelta >= 0 ? '▲ +' : '▼ ' }}{{ glLastDelta.toFixed(1) }}%
@@ -722,7 +701,7 @@ onMounted(async () => {
         <div class="q-grid" v-if="glQuarters.length">
           <div v-for="q in glQuarters" :key="q.label" class="q-cell" :class="{ last: q.last }">
             <span class="q-label">{{ q.label }}</span>
-            <span class="q-val">Rp {{ glCompact(q.val) }}</span>
+            <span class="q-val"><RpValue :value="Math.round(q.val)" /></span>
             <span class="q-pct" :class="q.pct !== null && q.pct < 0 ? 'neg' : ''">{{ qPct(q.pct) }}<template v-if="q.last"> YoY</template></span>
           </div>
         </div>
@@ -776,13 +755,14 @@ onMounted(async () => {
           <tbody>
             <tr v-for="(r, i) in glKonsTable" :key="i">
               <td>{{ glPeriodLabel(r) }}</td>
-              <td class="ta-r num" :title="formatRupiah(r.saldo)">{{ formatRpSingkat(r.saldo) }}</td>
+              <td class="ta-r num"><RpValue :value="r.saldo" /></td>
               <template v-if="glHasGrowth">
                 <td class="ta-r num" :class="growthAt(glKonsTable, i).pct !== null ? (growthAt(glKonsTable, i).pct! >= 0 ? 'g-up' : 'g-down') : 'muted'">
                   {{ pctStr(growthAt(glKonsTable, i).pct) }}
                 </td>
                 <td class="ta-r num" :class="growthAt(glKonsTable, i).abs !== null ? (growthAt(glKonsTable, i).abs! >= 0 ? 'g-up' : 'g-down') : 'muted'">
-                  {{ absStr(growthAt(glKonsTable, i).abs) }}
+                  <template v-if="growthAt(glKonsTable, i).abs === null">–</template>
+                  <template v-else>{{ growthAt(glKonsTable, i).abs! > 0 ? '+ ' : growthAt(glKonsTable, i).abs! < 0 ? '- ' : '' }}<RpValue :value="Math.abs(growthAt(glKonsTable, i).abs!)" /></template>
                 </td>
                 <td class="ta-c">
                   <span :class="statusClass(growthAt(glKonsTable, i))">
@@ -853,56 +833,11 @@ onMounted(async () => {
         </div>
 
         <div v-if="glDiag" class="chart-wrap diag">
-          <svg viewBox="0 0 960 340" role="img" :aria-label="glDiag.aria">
-            <!-- Clip animasi draw (kiri -> kanan); key = kantor terpilih -> draw ulang saat pilihan ganti -->
-            <defs :key="diagDrawKey">
-              <clipPath :id="`gldiag-${diagUid}`" clipPathUnits="userSpaceOnUse">
-                <rect class="diag-clip-rect" x="0" y="0" width="960" height="340" style="--diag-w: 960px" />
-              </clipPath>
-            </defs>
-            <g v-for="g in glDiag.grid" :key="g.y">
-              <line class="l-grid" x1="64" :y1="g.y" x2="944" :y2="g.y" />
-              <text class="t-axis" x="58" :y="g.y + 4" text-anchor="end" font-size="12">{{ g.label }}</text>
-            </g>
-            <g v-for="(t, ti) in glDiag.xTicks" :key="t.x">
-              <text
-                class="t-axis" :x="t.x" y="328" font-size="12"
-                :text-anchor="ti === 0 ? 'start' : ti === glDiag.xTicks.length - 1 ? 'end' : 'middle'"
-              >{{ t.label }}</text>
-            </g>
-            <g
-              v-for="l in glDiag.lines"
-              :key="l.kdloc"
-              :clip-path="`url(#gldiag-${diagUid})`"
-            >
-              <polyline
-                :points="l.pts.map((p) => `${p.x},${p.y}`).join(' ')"
-                fill="none"
-                :stroke="l.color"
-                stroke-width="2.5"
-                stroke-linejoin="round"
-                stroke-linecap="round"
-              />
-              <g v-for="(p, pi) in l.pts" :key="`${l.kdloc}-${p.label}`">
-                <circle :cx="p.x" :cy="p.y" r="3" :fill="l.color">
-                  <title>BPRS {{ l.kdloc }}, {{ p.label }}: {{ formatRupiah(p.saldo) }}</title>
-                </circle>
-                <!-- Nilai terlihat di atas tiap titik (halo surface biar kebaca di atas garis) -->
-                <text
-                  class="t-val t-halo"
-                  :x="p.x" :y="p.y - 8"
-                  :text-anchor="pi === 0 ? 'start' : pi === l.pts.length - 1 ? 'end' : 'middle'"
-                  font-size="11.5"
-                >{{ glDiagLabel(p.saldo) }}</text>
-              </g>
-            </g>
-          </svg>
-          <div class="chart-legend">
-            <span v-for="l in glDiag.lines" :key="l.kdloc">
-              <i class="swatch" :style="{ background: l.color }" aria-hidden="true" />
-              BPRS {{ l.kdloc }}
-            </span>
-          </div>
+          <LineChart
+            :labels="glDiagLabels"
+            :series="glDiagSeries"
+            :aria-label="glDiag.aria"
+          />
         </div>
         <p v-else-if="glKantors.length && !glCompareSel.length" class="muted small">Pilih minimal 1 BPRS untuk menampilkan diagram komparasi.</p>
       </div>
@@ -927,13 +862,14 @@ onMounted(async () => {
             <tr v-for="(r, i) in glKantorTable" :key="i">
               <td class="num">{{ r.kdloc ?? '–' }}</td>
               <td>{{ glPeriodLabel(r) }}</td>
-              <td class="ta-r num" :title="formatRupiah(r.saldo)">{{ formatRpSingkat(r.saldo) }}</td>
+              <td class="ta-r num"><RpValue :value="r.saldo" /></td>
               <template v-if="glHasGrowth">
                 <td class="ta-r num" :class="growthAt(glKantorTable, i).pct !== null ? (growthAt(glKantorTable, i).pct! >= 0 ? 'g-up' : 'g-down') : 'muted'">
                   {{ pctStr(growthAt(glKantorTable, i).pct) }}
                 </td>
                 <td class="ta-r num" :class="growthAt(glKantorTable, i).abs !== null ? (growthAt(glKantorTable, i).abs! >= 0 ? 'g-up' : 'g-down') : 'muted'">
-                  {{ absStr(growthAt(glKantorTable, i).abs) }}
+                  <template v-if="growthAt(glKantorTable, i).abs === null">–</template>
+                  <template v-else>{{ growthAt(glKantorTable, i).abs! > 0 ? '+ ' : growthAt(glKantorTable, i).abs! < 0 ? '- ' : '' }}<RpValue :value="Math.abs(growthAt(glKantorTable, i).abs!)" /></template>
                 </td>
                 <td class="ta-c">
                   <span :class="statusClass(growthAt(glKantorTable, i))">

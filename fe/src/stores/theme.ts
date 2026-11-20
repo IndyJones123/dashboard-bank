@@ -64,6 +64,38 @@ export const LEGACY_THEME: ThemeTokens = {
 
 export const HEX6 = /^#[0-9a-fA-F]{6}$/
 
+/* Font body (UI, tabel, angka). Kunci = nilai yg disimpan BE (FONT_KEYS).
+   Semua famili dimuat dari Google Fonts di index.html. Judul halaman tetap
+   Instrument Serif (--font-display) agar identitas visual tidak berubah. */
+export const FONT_OPTIONS = [
+  { key: 'geist', label: 'Geist (default)', family: 'Geist' },
+  { key: 'inter', label: 'Inter', family: 'Inter' },
+  { key: 'montserrat', label: 'Montserrat', family: 'Montserrat' },
+  { key: 'poppins', label: 'Poppins', family: 'Poppins' },
+  { key: 'roboto', label: 'Roboto', family: 'Roboto' },
+  { key: 'open-sans', label: 'Open Sans', family: 'Open Sans' },
+  { key: 'lato', label: 'Lato', family: 'Lato' },
+  { key: 'nunito', label: 'Nunito', family: 'Nunito' },
+  { key: 'plus-jakarta-sans', label: 'Plus Jakarta Sans', family: 'Plus Jakarta Sans' },
+  { key: 'source-sans-3', label: 'Source Sans 3', family: 'Source Sans 3' },
+] as const
+
+export type FontKey = (typeof FONT_OPTIONS)[number]['key']
+export const DEFAULT_FONT: FontKey = 'geist'
+
+/** Font yang sedang terpasang (preview editor & hasil load). */
+export const appliedFont = ref<FontKey>(DEFAULT_FONT)
+
+/** Terapkan font body ke :root. Kunci tak dikenal -> default. */
+export function applyFont(key: string | null | undefined): void {
+  const opt = FONT_OPTIONS.find((f) => f.key === key) ?? FONT_OPTIONS[0]
+  document.documentElement.style.setProperty(
+    '--font-body',
+    `'${opt.family}', 'Segoe UI', system-ui, -apple-system, sans-serif`,
+  )
+  appliedFont.value = opt.key
+}
+
 /** Tema yg sedang terpasang di :root (dipakai preview lokal editor). */
 export const applied = ref<ThemeTokens>({ ...DEFAULT_THEME })
 
@@ -119,16 +151,18 @@ export async function loadTheme(): Promise<void> {
   try {
     const { data } = await api.get('/api/theme')
     if (data?.tokens) applyTheme(data.tokens as Partial<ThemeTokens>)
+    applyFont(data?.font)
   } catch {
-    /* BE mati / jaringan: palet default di CSS sudah benar */
+    /* BE mati / jaringan: palet & font default di CSS sudah benar */
   }
 }
 
 /** Simpan tema global (admin): server memvalidasi ulang & mengembalikan
     merged; bila sukses, terapkan hasil server (bukan draft lokal). */
-export async function saveTheme(tokens: ThemeTokens): Promise<void> {
-  const { data } = await api.put('/api/theme', { tokens })
+export async function saveTheme(tokens: ThemeTokens, font: FontKey): Promise<void> {
+  const { data } = await api.put('/api/theme', { tokens, font })
   if (data?.tokens) applyTheme(data.tokens as Partial<ThemeTokens>)
+  applyFont(data?.font ?? font)
 }
 
 /** Kontras WCAG (ratio) antar2 hex: guard editor. */

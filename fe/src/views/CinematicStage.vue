@@ -4,6 +4,7 @@ import { cinema, pageDone } from '../stores/cinema'
 import { PRESENT_SLIDES, slideIdx, slideTitle } from '../stores/present'
 import { bankName } from '../stores/branding'
 import { dateLabel, sysDate } from '../pby-helpers'
+import { lineChartByEl } from './LineChart.vue'
 
 /* ==========================================================================
    CinematicStage: panggung Live mode Cinematic.
@@ -190,6 +191,20 @@ function readPanels(main: Element): PanelScene[] {
       const head = p.querySelector(':scope > h2, :scope > .pby-head h2, :scope h2')
       const subEl = p.querySelector(':scope > .sub, :scope > .pby-head .sub')
       const node = p.cloneNode(true) as HTMLElement
+      // Grafik TradingView: canvas tak ikut tersalin -> ganti gambar hasil snapshot
+      const srcHosts = [...p.querySelectorAll<HTMLElement>('.lc-host')]
+      const dstHosts = [...node.querySelectorAll<HTMLElement>('.lc-host')]
+      srcHosts.forEach((src, i) => {
+        const chart = lineChartByEl.get(src)
+        const dst = dstHosts[i]
+        if (!chart || !dst) return
+        const img = document.createElement('img')
+        img.alt = dst.getAttribute('aria-label') ?? ''
+        img.src = chart.takeScreenshot().toDataURL('image/png')
+        img.style.width = '100%'
+        img.style.height = `${src.clientHeight}px`
+        dst.replaceWith(img)
+      })
       node.setAttribute('inert', '')
       node.classList.add('cine-clone')
       // Kontrol (toggle/filter/tombol) tidak berarti di panggung
@@ -529,7 +544,9 @@ const counter = computed(
 .cine-swap-leave-to { opacity: 0; transform: translateY(-8px); }
 
 /* Progres adegan */
-.cine-prog { display: inline-flex; gap: 6px; flex: 0 1 360px; min-width: 120px; }
+/* Progres adegan: garis tipis di TEPI ATAS footer (bukan di tengah footer,
+   karena di situ kapsul navigasi Present Mode melayang -> dulu saling timpa) */
+.cine-prog { position: absolute; left: 4vw; right: 4vw; top: 0; height: 3px; display: flex; gap: 6px; }
 .cine-prog .seg { position: relative; flex: 1; height: 3px; border-radius: 3px; overflow: hidden; background: var(--c-line); }
 .cine-prog .seg.done { background: var(--c-text); }
 .cine-prog .fill {
@@ -739,10 +756,17 @@ const counter = computed(
 .cine-enter-from,
 .cine-leave-to { opacity: 0; }
 
+/* Footer hanya teks pendukung; di bawah lebar kapsul (± 740px di tengah)
+   teks kiri/kanan ikut disembunyikan agar tidak menimpa kapsul */
+@media (max-width: 1599px) {
+  .cine-skip { display: none; }
+}
+@media (max-width: 1365px) {
+  .cine-date { display: none; }
+}
 @media (max-width: 900px) {
-  .cine-skip, .cine-page, .cine-date { display: none; }
+  .cine-page { display: none; }
   .cine-bar.top { padding-right: calc(4vw + 60px); }
-  .cine-prog { flex: 1 1 auto; }
 }
 @media (max-width: 720px) {
   .cine-stage { padding: 3vh 6vw; }

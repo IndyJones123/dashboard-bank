@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import api, { formatRupiah } from '../api'
+import api from '../api'
 import { apiErrText } from '../report-helpers'
 import { DPD, RISK_COLORS, type Row, dateLabel, intText, sumOf, sysDate } from '../pby-helpers'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
-import PbyTable, { type PbyCol } from './PbyTable.vue'
+import type { PbyCol } from './PbyTable.vue'
+import PbyList from './PbyList.vue'
 import PbyStack, { type StackSeg } from './PbyStack.vue'
+import RpValue from './RpValue.vue'
 
 /* ==========================================================================
    PEMBIAYAAN · TAGIHAN & TUNGGAKAN
@@ -149,22 +151,22 @@ onMounted(async () => {
     <div class="wgrid">
       <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Total Tunggakan</p>
-        <p class="lead-value num">{{ tgk.loading ? '–' : formatRupiah(Math.round(totTgk)) }}</p>
+        <p class="lead-value num"><RpValue :value="tgk.loading ? null : Math.round(totTgk)" /></p>
         <p class="lead-note">{{ tgk.loading ? '–' : intText(tgk.nasabah.length) }} kontrak menunggak</p>
       </section>
       <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
         <dl class="ledger">
           <div>
             <dt>Tunggakan pokok</dt>
-            <dd class="num">{{ tgk.loading ? '–' : formatRupiah(Math.round(totTgkMdl)) }}</dd>
+            <dd class="num"><RpValue :value="tgk.loading ? null : Math.round(totTgkMdl)" /></dd>
           </div>
           <div>
             <dt>Tunggakan margin</dt>
-            <dd class="num">{{ tgk.loading ? '–' : formatRupiah(Math.round(totTgkMgn)) }}</dd>
+            <dd class="num"><RpValue :value="tgk.loading ? null : Math.round(totTgkMgn)" /></dd>
           </div>
           <div>
             <dt>OS dengan DPD &gt; 90 hari <small>{{ dpd.loading ? '–' : intText(dpdOver90Noa) }} NOA</small></dt>
-            <dd class="num" :class="dpdOver90 > 0 ? 'g-down' : ''">{{ dpd.loading ? '–' : formatRupiah(Math.round(dpdOver90)) }}</dd>
+            <dd class="num" :class="dpdOver90 > 0 ? 'g-down' : ''"><RpValue :value="dpd.loading ? null : Math.round(dpdOver90)" /></dd>
           </div>
         </dl>
       </section>
@@ -187,7 +189,7 @@ onMounted(async () => {
         <p v-else-if="dpd.error" class="alert">{{ dpd.error }}</p>
         <template v-else>
           <PbyStack :segs="dpdSegs" label="Komposisi outstanding per umur tunggakan" />
-          <PbyTable
+          <PbyList
             :cols="dpdCols" :rows="dpd.view === 'lokasi' ? dpd.lokasi : dpd.ao"
             :subtotal-by="dpd.view === 'lokasi' ? 'kdloc' : undefined"
             :subtotal-label="subLabel('nmkantor')"
@@ -211,8 +213,8 @@ onMounted(async () => {
         </div>
         <p v-if="tgk.loading" class="muted">Memuat tunggakan…</p>
         <p v-else-if="tgk.error" class="alert">{{ tgk.error }}</p>
-        <PbyTable
-          v-else :cols="tgkCols" :rows="tgk.view === 'lokasi' ? tgk.lokasi : tgk.ao"
+        <PbyList
+          v-else :cols="tgkCols" head-key="tgk" :rows="tgk.view === 'lokasi' ? tgk.lokasi : tgk.ao"
           :subtotal-by="tgk.view === 'lokasi' ? 'kdloc' : undefined"
           :subtotal-label="subLabel('nmcabang')"
           empty="Tidak ada tunggakan."
@@ -239,8 +241,8 @@ onMounted(async () => {
         </div>
         <p v-if="tgk.loading" class="muted">Memuat daftar nasabah…</p>
         <p v-else-if="tgk.error" class="alert">{{ tgk.error }}</p>
-        <PbyTable
-          v-else :cols="nsbCols" :rows="nsbRows" :per-page="15"
+        <PbyList
+          v-else :cols="nsbCols" head-key="tgk" :rows="nsbRows" :per-page="15"
           :empty="q || kantorF ? 'Tidak ada nasabah yang cocok.' : 'Tidak ada nasabah menunggak.'"
         />
       </section>

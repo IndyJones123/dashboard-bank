@@ -12,7 +12,7 @@ export interface StackSeg {
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatRupiah } from '../api'
-import { formatRpSingkat } from '../report-helpers'
+import RpValue from './RpValue.vue'
 
 /* Bar komposisi 100% (kolektibilitas / bucket DPD) + legenda nilai & porsi.
    Hanya menjumlahkan kolom hasil query; tidak ada angka lain yg dibuat. */
@@ -37,7 +37,7 @@ const pctText = (v: number): string =>
       <li v-for="s in segs" :key="s.key">
         <span class="sw" :style="{ background: s.color }" aria-hidden="true" />
         <span class="lbl">{{ s.label }}<small v-if="s.note">{{ s.note }}</small></span>
-        <strong class="num" :title="formatRupiah(s.value)">{{ formatRpSingkat(s.value) }}</strong>
+        <strong class="num"><RpValue :value="Math.round(s.value)" /></strong>
         <span class="pc num">{{ pctText(s.value) }}</span>
       </li>
     </ul>
@@ -60,7 +60,7 @@ const pctText = (v: number): string =>
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
   gap: 0.6rem 1.5rem;
 }
 .stack-legend li {
@@ -73,6 +73,6 @@ const pctText = (v: number): string =>
 .sw { width: 10px; height: 10px; border-radius: 3px; align-self: center; }
 .lbl { grid-column: 2 / span 2; font-size: var(--fs-sm); font-weight: 600; color: var(--muted-2); }
 .lbl small { font-weight: 400; color: var(--muted); margin-left: 0.35rem; }
-.stack-legend strong { grid-column: 2; font-size: var(--fs-base); color: var(--ink); }
+.stack-legend strong { grid-column: 2; min-width: 0; font-size: var(--fs-base); color: var(--ink); overflow-wrap: anywhere; }
 .pc { grid-column: 3; font-size: var(--fs-sm); color: var(--muted); }
 </style>

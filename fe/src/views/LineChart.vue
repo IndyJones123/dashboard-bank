@@ -6,248 +6,261 @@ export interface LineSerie {
   dash?: string
   values: (number | null)[]
 }
+
+/* Elemen .lc-host -> instans chart. Dipakai Cinematic utk menyalin grafik
+   sbg gambar (cloneNode tidak menyalin isi canvas). */
+export const lineChartByEl = new WeakMap<HTMLElement, IChartApi>()
 </script>
 
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  AreaSeries,
+  ColorType,
+  LineSeries,
+  LineStyle,
+  createChart,
+  type IChartApi,
+  type ISeriesApi,
+  type MouseEventParams,
+  type SeriesType,
+  type Time,
+} from 'lightweight-charts'
 import { formatRupiah } from '../api'
 
 /* ==========================================================================
-   LineChart: grafik garis SVG (tanpa lib), dipakai laporan DPK & Piutang.
-   Konvensi: WARNA = kantor (konstant antar laporan), garis putus-putus =
-   produk/golongan kedua (dash), titik bulat = nilai per bulan dengan label
-   nilai terlihat di atas tiap titik (hover -> rupiah penuh).
-   Null pada periode = garis dipisah (segmen putus), bukan dihubungi bohong.
+   LineChart: grafik garis per kantor memakai TradingView Lightweight Charts.
+   - Sumbu waktu = indeks periode (labels), tiap periode 1 "hari" dummy.
+   - Seri null -> titik kosong (garis putus, bukan diisi nilai palsu).
+   - Chip kantor di bawah: tampil/sembunyi seri; skala ikut seri yg tampil.
+   - Tooltip saat kursor: nama kantor + nilai rupiah penuh.
+   - Seri tunggal non-dash: area di bawah garis.
    ========================================================================== */
 
-const props = defineProps<{
-  labels: string[]
-  series: LineSerie[]
-  aria?: string
-}>()
-
-const W = 1040, H = 290, PADL = 58, PADR = 34, TOP = 22, BASE = 250
-/* Lebar minimum sebelum chart digulir: 13 periode tetap terbaca di tablet */
-const MIN_W = 760
-
-/* Animasi gambar garis: clipPath kiri -> kanan (dari awal ke akhir bulan)
-   saat data tampil. defs di-key agar re-mount saat data berganti -> animasi
-   main ulang. ID unik per instans (banyak chart per halaman). */
-const uid = useId()
-const drawKey = ref(0)
-watch(() => [props.labels, props.series], () => { drawKey.value += 1 })
-
-const maxVal = computed(() => {
-  let m = 0
-  for (const s of props.series) for (const v of s.values) if (v != null && v > m) m = v
-  return m || 1
-})
-
-/* Skala: 'abs' = sumbu absolut (0..maks GLOBAL, banding NILAI antar seri);
-   'idx' = indeks per seri (0..100%, tiap garis dinormalisasi ke maksnya
-   sendiri) utk chart campuran magnitudo: seri kecil tidak "tidur" di garis
-   dasar (jebakan lama: 1 seri 24T + 1 seri 300M -> seri kecil = garis datar). */
-const mode = ref<'abs' | 'idx'>('abs')
-const perMax = computed(() =>
-  props.series.map((s) => {
-    let m = 0
-    for (const v of s.values) if (v != null && v > m) m = v
-    return m || 1
-  }),
+const props = withDefaults(
+  defineProps<{
+    labels: string[]
+    series: LineSerie[]
+    aria?: string
+    /** false = tanpa legenda/chip di bawah. Default true (boolean tanpa default = false di Vue). */
+    legend?: boolean
+  }>(),
+  { legend: true },
 )
+const showLegend = computed(() => props.legend)
 
+const DAY = 86400
+const host = ref<HTMLDivElement | null>(null)
+const tip = ref<{ x: number; y: number; period: string; rows: { label: string; color: string; value: string }[] } | null>(null)
+const tipEl = ref<HTMLDivElement | null>(null)
+/** Posisi pop-up: sisi kanan kursor bila muat, kalau tidak sisi kiri (diukur, bukan ditebak). */
+const tipLeft = ref(0)
+
+/* Seri yg disembunyikan (chip). Minimal 1 seri tetap tampil. */
+const off = ref<string[]>([])
+const vis = computed<LineSerie[]>(() => props.series.filter((s) => !off.value.includes(s.key)))
+function toggleSeries(key: string): void {
+  if (off.value.includes(key)) off.value = off.value.filter((k) => k !== key)
+  else if (vis.value.length > 1) off.value = [...off.value, key]
+}
+const selectable = computed(() => props.series.length > 1)
+
+/* Format sumbu: >= 1 miliar selalu M (tanpa T), pemisah ribuan id-ID */
 const trim = (v: number): string => v.toFixed(v < 10 ? 1 : 0)
-const fmtAxis = (v: number): string => {
-  if (v >= 1e12) return `${trim(v / 1e12)}T`
-  if (v >= 1e9) return `${trim(v / 1e9)}M`
+function fmtAxis(v: number): string {
+  if (v >= 1e9) return `${(v / 1e9).toLocaleString('id-ID', { maximumFractionDigits: v < 1e10 ? 1 : 0 })}M`
   if (v >= 1e6) return `${trim(v / 1e6)}Jt`
   if (v >= 1e3) return `${trim(v / 1e3)}rb`
   return String(Math.round(v))
 }
 
-const ticks = computed(() => {
-  const mx = maxVal.value
-  const plotH = BASE - TOP
-  // g=0 = garis dasar (bawah) -> label 0; g=4 (atas) -> label maks.
-  // Mode indeks: sumbu dlm persen (100% = puncak tiap seri).
-  return [0, 1, 2, 3, 4].map((g) => ({
-    y: BASE - (g * plotH) / 4,
-    label: mode.value === 'idx' ? `${g * 25}%` : fmtAxis((mx * g) / 4),
-  }))
-})
+const timeOf = (i: number): Time => ((i + 1) * DAY) as Time
+const idxOf = (t: unknown): number => Math.round(Number(t) / DAY) - 1
 
-const xAt = (i: number): number =>
-  PADL + (i * (W - PADL - PADR)) / Math.max(1, props.labels.length - 1)
+let chart: IChartApi | null = null
+let seriesMap: { s: ISeriesApi<SeriesType>; meta: LineSerie }[] = []
 
-interface Drawn {
-  segs: string[] // polyline points per segmen (null memutus garis)
-  areas: string[] // path area di bawah segmen (gradient; '' utk seri dash)
-  pts: { x: number; y: number; v: number; title: string }[]
+function themeColor(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
 }
 
-const drawn = computed<Drawn[]>(() =>
-  props.series.map((s, si) => {
-    const cap = mode.value === 'idx' ? perMax.value[si] : maxVal.value
-    const segs: string[] = []
-    const areas: string[] = []
-    let cur: string[] = []
-    const flush = () => {
-      if (cur.length > 1) {
-        segs.push(cur.join(' '))
-        // Area hanya utk chart 1 seri: bertumpuk antar kantor mengaburkan garis
-        if (!s.dash && props.series.length === 1) {
-          const x0 = cur[0].split(',')[0]
-          const x1 = cur[cur.length - 1].split(',')[0]
-          areas.push(`M${x0},${BASE} L${cur.join(' L')} L${x1},${BASE} Z`)
-        } else areas.push('')
-      }
-      cur = []
-    }
-    const pts: Drawn['pts'] = []
-    s.values.forEach((v, i) => {
-      if (v == null || i >= props.labels.length) {
-        flush()
-        return
-      }
-      const x = xAt(i)
-      const y = BASE - (v / cap) * (BASE - TOP)
-      cur.push(`${x},${y}`)
-      pts.push({ x, y, v, title: `${s.label} · ${props.labels[i]}: ${formatRupiah(v)}` })
+function build(): void {
+  if (!host.value) return
+  if (!chart) {
+    chart = createChart(host.value, {
+      autoSize: true,
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: themeColor('--muted', '#5d6963'),
+        fontFamily: getComputedStyle(document.body).fontFamily,
+        fontSize: 12,
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { visible: false },
+        horzLines: { color: themeColor('--border', 'rgba(21,32,27,0.07)') },
+      },
+      rightPriceScale: { visible: false },
+      leftPriceScale: { visible: true, borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+        tickMarkFormatter: (t: Time) => props.labels[idxOf(t)] ?? '',
+      },
+      crosshair: { vertLine: { labelVisible: false }, horzLine: { visible: false, labelVisible: false } },
+      handleScroll: false,
+      handleScale: false,
     })
-    flush()
-    return { segs, areas, pts }
-  }),
+    chart.subscribeCrosshairMove(onMove)
+    if (host.value) lineChartByEl.set(host.value, chart)
+  }
+  // Hapus seri lama, buat ulang sesuai chip & data terbaru
+  for (const m of seriesMap) chart.removeSeries(m.s)
+  seriesMap = []
+  const single = vis.value.length === 1 && !vis.value[0].dash
+  for (const meta of vis.value) {
+    const common = {
+      priceFormat: { type: 'custom' as const, formatter: (v: number) => fmtAxis(v), minMove: 1 },
+      lineWidth: 2 as const,
+      lineStyle: meta.dash ? LineStyle.Dashed : LineStyle.Solid,
+      crosshairMarkerRadius: 4,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      color: meta.color,
+      lineColor: meta.color,
+    }
+    const s = single
+      ? chart.addSeries(AreaSeries, {
+          ...common,
+          topColor: `${meta.color}2e`,
+          bottomColor: `${meta.color}05`,
+        })
+      : chart.addSeries(LineSeries, common)
+    // Null -> whitespace (titik kosong): garis terputus, tidak diisi
+    s.setData(
+      meta.values.map((v, i) => (v == null ? { time: timeOf(i) } : { time: timeOf(i), value: v })) as never,
+    )
+    seriesMap.push({ s: s as ISeriesApi<SeriesType>, meta })
+  }
+  chart.timeScale().fitContent()
+}
+
+function onMove(p: MouseEventParams<Time>): void {
+  if (!p.time || !p.point || !host.value) {
+    tip.value = null
+    return
+  }
+  const i = idxOf(p.time)
+  const rows = seriesMap
+    .map(({ s, meta }) => {
+      const d = p.seriesData.get(s) as { value?: number } | undefined
+      if (d?.value == null) return null
+      return { label: meta.label, color: meta.color, value: formatRupiah(d.value), v: d.value }
+    })
+    .filter((r): r is { label: string; color: string; value: string; v: number } => r !== null)
+    .sort((a, b) => b.v - a.v)
+    .map(({ v: _v, ...r }) => r)
+  if (!rows.length) {
+    tip.value = null
+    return
+  }
+  tip.value = { x: p.point.x, y: p.point.y, period: props.labels[i] ?? '', rows }
+  void nextTick(() => {
+    const w = tipEl.value?.offsetWidth ?? 0
+    const hw = host.value?.clientWidth ?? 0
+    const right = p.point!.x + 14
+    tipLeft.value = right + w <= hw ? right : Math.max(0, p.point!.x - 14 - w)
+  })
+}
+
+/* Pop-up selalu di dalam area grafik (atas), disisi kursor; tidak terpotong */
+const tipStyle = computed(() => ({ left: `${tipLeft.value}px`, top: '6px' }))
+
+onMounted(async () => {
+  await nextTick()
+  build()
+})
+watch(
+  () => [props.labels, vis.value, props.series],
+  () => build(),
+  { deep: true },
 )
+onBeforeUnmount(() => {
+  chart?.remove()
+  chart = null
+  seriesMap = []
+})
 </script>
 
 <template>
   <div>
     <div class="chart-scroll">
-      <div class="chart-wrap lc" :style="{ width: `max(100%, ${MIN_W}px)` }">
-        <svg :viewBox="`0 0 ${W} ${H}`" role="img" :aria-label="aria ?? 'Grafik garis laporan'">
-          <!-- Clip animasi draw (kiri -> kanan); key = drawKey -> main ulang saat data ganti -->
-          <defs :key="drawKey">
-            <clipPath :id="`lcdraw-${uid}`" clipPathUnits="userSpaceOnUse">
-              <rect
-                class="lc-clip-rect"
-                x="0" y="0" :width="W" :height="H"
-                :style="{ '--lc-w': `${W}px` }"
-              />
-            </clipPath>
-            <!-- Gradient area per seri (fade ke dasar; sentuhan fitlink) -->
-            <linearGradient
-              v-for="(s, si) in series"
-              :id="`lca-${uid}-${si}`"
-              :key="`g${s.key}`"
-              x1="0" y1="0" x2="0" y2="1"
-            >
-              <stop offset="0%" :stop-color="s.color" stop-opacity="0.18" />
-              <stop offset="100%" :stop-color="s.color" stop-opacity="0.01" />
-            </linearGradient>
-          </defs>
-          <g v-for="t in ticks" :key="t.y">
-            <line class="l-grid" :x1="PADL" :y1="t.y" :x2="W - PADR" :y2="t.y" />
-            <text class="t-axis" :x="PADL - 8" :y="t.y + 4" text-anchor="end" font-size="12">{{ t.label }}</text>
-          </g>
-          <g
-            v-for="(s, si) in series"
-            :key="s.key"
-            :clip-path="`url(#lcdraw-${uid})`"
-          >
-            <!-- Area gradient di bawah garis ('' = seri dash / segmen tunggal) -->
-            <path
-              v-for="(ar, ai) in drawn[si]?.areas ?? []"
-              v-show="ar"
-              :key="`a${ai}`"
-              :d="ar"
-              :fill="`url(#lca-${uid}-${si})`"
-              stroke="none"
-            />
-            <polyline
-              v-for="(seg, gi) in drawn[si]?.segs ?? []"
-              :key="gi"
-              :points="seg"
-              fill="none"
-              :stroke="s.color"
-              stroke-width="2.2"
-              :stroke-dasharray="s.dash"
-              stroke-linejoin="round"
-              stroke-linecap="round"
-            />
-            <circle
-              v-for="(p, pi) in drawn[si]?.pts ?? []"
-              :key="pi"
-              :cx="p.x" :cy="p.y" r="3.4"
-              :fill="s.color" class="lc-dot"
-            >
-              <title>{{ p.title }}</title>
-            </circle>
-            <text
-              v-for="(p, pi) in drawn[si]?.pts ?? []"
-              :key="`v${pi}`"
-              class="t-val t-halo"
-              :x="p.x" :y="p.y - 8"
-              :text-anchor="p.x <= PADL + 1 ? 'start' : 'middle'"
-              font-size="11.5"
-            >{{ fmtAxis(p.v) }}</text>
-          </g>
-          <line class="l-zero" :x1="PADL" :y1="BASE" :x2="W - PADR" :y2="BASE" />
-          <text
-            v-for="(lb, i) in labels"
-            :key="lb + i"
-            class="t-axis"
-            :x="xAt(i)" :y="BASE + 22"
-            text-anchor="middle"
-            font-size="12"
-          >{{ lb }}</text>
-        </svg>
+      <div class="lc-host-wrap">
+        <div
+          ref="host"
+          class="lc-host"
+          role="img"
+          :aria-label="aria ?? 'Grafik garis laporan'"
+        />
+        <div v-if="tip" ref="tipEl" class="lc-tip" :class="{ wide: tip.rows.length > 4 }" :style="tipStyle" role="status">
+          <small>{{ tip.period }}</small>
+          <span v-for="r in tip.rows" :key="r.label" class="lc-tip-row">
+            <i :style="{ background: r.color }" aria-hidden="true" />
+            {{ r.label }} <strong>{{ r.value }}</strong>
+          </span>
+        </div>
       </div>
     </div>
-    <!-- Kaki chart: legend chip (kiri) + toggle skala (kanan) -->
-    <div class="lc-foot">
-      <ul class="lc-legend">
-        <li v-for="s in series" :key="s.key">
-          <svg class="lc-key" width="20" height="8" aria-hidden="true">
-            <line x1="0" y1="4" x2="20" y2="4" :stroke="s.color" stroke-width="2.5" :stroke-dasharray="s.dash" />
-          </svg>
-          {{ s.label }}
+    <!-- Kaki chart: legend chip (bisa dipilih bila >1 kantor) -->
+    <div v-if="showLegend" class="lc-foot">
+      <ul class="lc-legend" :aria-label="selectable ? 'Pilih kantor yang ditampilkan' : undefined">
+        <li v-for="s in props.series" :key="s.key">
+          <button
+            v-if="selectable"
+            type="button"
+            class="lc-chip"
+            :class="{ off: off.includes(s.key) }"
+            :aria-pressed="!off.includes(s.key)"
+            @click="toggleSeries(s.key)"
+          >
+            <i class="lc-dot" :style="{ background: s.color }" aria-hidden="true" />
+            {{ s.label }}
+          </button>
+          <template v-else>
+            <i class="lc-dot" :style="{ background: s.color }" aria-hidden="true" />
+            {{ s.label }}
+          </template>
+        </li>
+        <li v-if="selectable && off.length">
+          <button type="button" class="lc-chip all" @click="off = []">Tampilkan semua</button>
         </li>
       </ul>
-      <div v-if="series.length > 1" class="segmented lc-scale" role="group" aria-label="Skala sumbu-Y">
-        <button type="button" :class="{ on: mode === 'abs' }" @click="mode = 'abs'">
-          Skala absolut
-        </button>
-        <button type="button" :class="{ on: mode === 'idx' }" @click="mode = 'idx'">
-          Skala indeks
-        </button>
-      </div>
     </div>
-    <p v-if="mode === 'idx'" class="note lc-note">
-      Skala indeks: tiap garis dihitung terhadap puncaknya sendiri (100% =
-      puncak garis itu), untuk membandingkan bentuk tren antar kantor yang
-      nilainya jauh berbeda. Label titik tetap menampilkan nilai rupiah asli.
-    </p>
   </div>
 </template>
 
 <style scoped>
-.chart-scroll {
-  overflow-x: auto;
+.chart-scroll { overflow: visible; }
+.lc-host-wrap { position: relative; width: 100%; height: 320px; }
+.lc-host { position: absolute; inset: 0; }
+.lc-tip {
+  position: absolute; z-index: 2; pointer-events: none;
+  display: grid; gap: 0.15rem; width: max-content; max-width: 100%;
+  padding: 0.45rem 0.6rem; border-radius: 8px;
+  background: var(--ink); color: var(--bg);
+  font-size: var(--fs-sm); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
-/* Animasi draw garis: clip rect melebar 0 -> lebar plot (kiri ke kanan,
-   Jan -> Des). Jika browser tak dukung animasi width, rect tetap W (attribute
-   default) -> chart tampil penuh tanpa animasi (gagal aman). */
-.lc-clip-rect {
-  animation: lc-draw 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-@keyframes lc-draw {
-  from { width: 0; }
-  to { width: var(--lc-w); }
-}
-.lc-key {
-  flex: 0 0 auto;
-}
-/* Kaki: legend kiri + toggle skala kanan; wrap saat sempit. */
+.lc-tip.wide { grid-template-columns: auto auto; column-gap: 1.1rem; }
+.lc-tip.wide small { grid-column: 1 / -1; }
+.lc-tip small { font-size: 0.75rem; opacity: 0.75; }
+.lc-tip-row { display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+.lc-tip-row strong { margin-left: auto; padding-left: 0.6rem; font-variant-numeric: tabular-nums; }
+.lc-tip-row { min-width: 0; }
+.lc-tip-row i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* Kaki: legend chip; wrap saat sempit. */
 .lc-foot {
   display: flex;
   align-items: center;
@@ -256,21 +269,10 @@ const drawn = computed<Drawn[]>(() =>
   flex-wrap: wrap;
   margin-top: 0.6rem;
 }
-.lc-scale {
-  flex: 0 0 auto;
-}
-.lc-note {
-  margin: 0.45rem 0 0;
-}
-/* Cincin surface di titik: garis tetap terpisah saat antar seri berimpit. */
-.lc-dot {
-  stroke: var(--surface);
-  stroke-width: 1.4;
-}
 .lc-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1.1rem;
+  gap: 0.35rem 0.5rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -283,4 +285,18 @@ const drawn = computed<Drawn[]>(() =>
   gap: 0.4rem;
   font-weight: 500;
 }
+.lc-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+/* Chip kantor: tap/klik untuk tampil/sembunyi */
+.lc-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: 34px; padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: var(--surface); color: var(--ink);
+  font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.lc-chip:hover { background: var(--surface-2); }
+.lc-chip:focus-visible { outline: 2px solid var(--primary-ring); outline-offset: 2px; }
+.lc-chip.off { opacity: 0.45; text-decoration: line-through; }
+.lc-chip.all { color: var(--primary); border-color: var(--primary-40); }
 </style>

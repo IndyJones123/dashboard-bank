@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import api, { formatRupiah } from '../api'
+import api from '../api'
 import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
 import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
@@ -9,6 +9,7 @@ import DetailTable, { type DetailCol } from './DetailTable.vue'
 import Sparkline from './Sparkline.vue'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
+import RpValue from './RpValue.vue'
 
 // Layout widget dari CMS: grafik total = 1 widget, semua grafik golongan = 1 widget
 const w = useWidgets('reports-piutang')
@@ -248,7 +249,7 @@ onMounted(() => {
     <div class="wgrid">
     <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Posisi Piutang</p>
-        <p class="lead-value num">{{ loading ? '–' : formatRupiah(totalAkhir) }}</p>
+        <p class="lead-value num"><RpValue :value="loading ? null : totalAkhir" /></p>
         <p class="lead-note">Posisi {{ lastLabel }}</p>
     </section>
     <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
@@ -270,7 +271,7 @@ onMounted(() => {
           <div>
             <dt>Selisih vs Des {{ Number(tahun) - 1 }} <small>Des {{ Number(tahun) - 1 }} s.d. {{ lastLabel }}</small></dt>
             <dd class="num" :class="(totalAkhir - totalAwal) >= 0 ? 'g-up' : 'g-down'">
-              {{ loading ? '–' : formatRupiah(totalAkhir - totalAwal) }}
+              <RpValue :value="loading ? null : totalAkhir - totalAwal" />
             </dd>
           </div>
         </dl>

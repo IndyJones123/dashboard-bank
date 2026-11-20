@@ -8,15 +8,14 @@ export interface DetailCol {
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { formatRupiah } from '../api'
-import { formatRpSingkat } from '../report-helpers'
+import RpValue from './RpValue.vue'
 
 /* ==========================================================================
    DetailTable: tabel terperinci utk laporan DPK (2) & Piutang (3).
    - PAGINATION (default 10 baris/halaman, footer selalu tampil).
    - SEMUA kolom 1 baris (nowrap) -> tabel dilebar gulir kiri-kanan sendiri,
      tidak pernah wrap nilai ke baris ke-2/3.
-   - Sel angka: tampil rupiah singkat, hover = rupiah penuh (title).
+   - Sel angka: RpValue (> 11 digit ringkas M + tombol nilai lengkap).
    ========================================================================== */
 
 const props = withDefaults(
@@ -46,10 +45,7 @@ const range = computed(() => {
   return `${a}–${b} dari ${n} baris`
 })
 
-const text = (v: unknown): string =>
-  v == null ? '–' : typeof v === 'number' ? formatRpSingkat(v) : String(v)
-const titleOf = (v: unknown): string | undefined =>
-  typeof v === 'number' ? formatRupiah(v) : undefined
+const text = (v: unknown): string => (v == null ? '–' : String(v))
 </script>
 
 <template>
@@ -67,8 +63,7 @@ const titleOf = (v: unknown): string | undefined =>
               v-for="c in cols"
               :key="c.key"
               :class="{ 'ta-r': c.right }"
-              :title="titleOf(r[c.key])"
-            >{{ text(r[c.key]) }}</td>
+            ><RpValue v-if="typeof r[c.key] === 'number'" :value="r[c.key] as number" /><template v-else>{{ text(r[c.key]) }}</template></td>
           </tr>
           <tr v-if="!paged.length">
             <td :colspan="cols.length" class="muted">Tidak ada baris.</td>

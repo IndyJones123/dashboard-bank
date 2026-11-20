@@ -464,6 +464,15 @@ DEFAULT_THEME = {
     "red": "#c0392b",
 }
 
+# Font body (UI & angka) — kunci dipilih admin di CMS; disimpan di app_settings
+# dgn kkey 'font'. Hanya kunci dikenal yg diterima (lihat FONT_KEYS di FE).
+FONT_KEY = "font"
+FONT_KEYS = (
+    "geist", "inter", "montserrat", "poppins", "roboto",
+    "open-sans", "lato", "nunito", "plus-jakarta-sans", "source-sans-3",
+)
+DEFAULT_FONT = "geist"
+
 _theme_ready = False
 
 
@@ -493,8 +502,18 @@ def _load_theme() -> dict[str, str]:
     return out
 
 
+def _load_font() -> str:
+    """Font tersimpan; kosong/tak dikenal -> default."""
+    rows = db.run_query(Q.Q_THEME_GET, (FONT_KEY,))
+    if not rows:
+        return DEFAULT_FONT
+    val = str(rows[0].get("value") or "").strip().lower()
+    return val if val in FONT_KEYS else DEFAULT_FONT
+
+
 class ThemeIn(BaseModel):
-    tokens: dict[str, str]
+    tokens: dict[str, str] = {}
+    font: str | None = None
 
 
 @app.get("/api/theme")
@@ -504,9 +523,9 @@ def get_theme():
     try:
         if not db.MOCK_MODE:
             _ensure_theme_table()
-        return {"tokens": _load_theme(), "source": "db"}
+        return {"tokens": _load_theme(), "font": _load_font(), "source": "db"}
     except Exception:
-        return {"tokens": dict(DEFAULT_THEME), "source": "default"}
+        return {"tokens": dict(DEFAULT_THEME), "font": DEFAULT_FONT, "source": "default"}
 
 
 @app.put("/api/theme")
@@ -520,19 +539,27 @@ def put_theme(body: ThemeIn, user: dict = Depends(current_user)):
         for k, v in body.tokens.items()
         if k in THEME_TOKENS and isinstance(v, str) and _HEX6.match(v.strip())
     }
-    if not tokens:
+    font = (body.font or "").strip().lower() or None
+    if font is not None and font not in FONT_KEYS:
+        raise HTTPException(status_code=422, detail="Font tidak dikenal")
+    if not tokens and font is None:
         raise HTTPException(status_code=422, detail="Tidak ada token warna valid (format #RRGGBB)")
     try:
         if not db.MOCK_MODE:
             _ensure_theme_table()
         merged = {**_load_theme(), **tokens}
-        value = json.dumps(merged, separators=(",", ":"))
-        affected = db.run_sql(Q.Q_THEME_UPDATE, (value, THEME_KEY))
-        if not affected:
-            db.run_sql(Q.Q_THEME_INSERT, (THEME_KEY, value))
+        if tokens:
+            value = json.dumps(merged, separators=(",", ":"))
+            affected = db.run_sql(Q.Q_THEME_UPDATE, (value, THEME_KEY))
+            if not affected:
+                db.run_sql(Q.Q_THEME_INSERT, (THEME_KEY, value))
+        if font is not None:
+            affected = db.run_sql(Q.Q_THEME_UPDATE, (font, FONT_KEY))
+            if not affected:
+                db.run_sql(Q.Q_THEME_INSERT, (FONT_KEY, font))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Gagal menyimpan tema — {_db_detail(exc)}")
-    return {"ok": True, "tokens": merged}
+    return {"ok": True, "tokens": merged, "font": font or _load_font()}
 
 
 # ---------------------------------------------------------------------------

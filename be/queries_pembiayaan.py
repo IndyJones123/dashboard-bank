@@ -111,11 +111,16 @@ def clean_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # MOCK (MOCK_MODE=1) — bentuk kolom PERSIS hasil SELECT tiap seksi.
 # Deterministik dari seed supaya stabil antar request.
 # ---------------------------------------------------------------------------
-_M_KANTOR = [("01", "KANTOR PUSAT"), ("02", "CABANG UTARA"), ("03", "CABANG SELATAN")]
+_M_KANTOR = [
+    ("01", "KANTOR PUSAT"), ("02", "CABANG UTARA"), ("03", "CABANG SELATAN"),
+    ("04", "CABANG BARAT"), ("05", "CABANG TIMUR"), ("06", "CABANG TENGAH"),
+    ("07", "CABANG BOGOR"), ("08", "CABANG DEPOK"), ("09", "CABANG BEKASI"), ("10", "CABANG TANGERANG"),
+]
 _M_PRODUK = [("101", "MURABAHAH"), ("102", "MUSYARAKAH"), ("103", "IJARAH"), ("104", "QARDH")]
 _M_AO = [("A01", "AHMAD FAUZI"), ("A02", "BUDI SANTOSO"), ("A03", "CITRA LESTARI"),
          ("A04", "DEWI RAHMA"), ("A05", "EKO PRASETYO")]
-_M_W = {"01": 1.0, "02": 0.7, "03": 0.5}
+_M_W = {"01": 1.0, "02": 0.7, "03": 0.5, "04": 0.62, "05": 0.45, "06": 0.38,
+        "07": 0.33, "08": 0.41, "09": 0.36, "10": 0.29}
 
 
 def _rnd(*seed: object) -> float:

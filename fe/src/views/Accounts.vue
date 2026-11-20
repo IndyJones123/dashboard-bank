@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import api, { formatRupiah } from '../api'
+import api from '../api'
+import RpValue from './RpValue.vue'
 
 interface Account {
   id: number
@@ -51,7 +52,7 @@ onMounted(async () => {
             <td class="num">{{ a.no_rekening }}</td>
             <td>{{ a.nasabah }}<span class="cell-sub">{{ a.kota }}</span></td>
             <td>{{ a.jenis }}</td>
-            <td class="ta-r num">{{ formatRupiah(a.saldo) }}</td>
+            <td class="ta-r num"><RpValue :value="a.saldo" /></td>
             <td>{{ a.dibuka_pada }}</td>
           </tr>
         </tbody>

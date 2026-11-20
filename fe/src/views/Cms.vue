@@ -8,8 +8,12 @@ import { apiErrText } from '../report-helpers'
 import BrandImageField from './BrandImageField.vue'
 import WidgetSettings from './WidgetSettings.vue'
 import {
+  DEFAULT_FONT,
+  FONT_OPTIONS,
   DEFAULT_THEME,
   HEX6,
+  applyFont,
+  type FontKey,
   FITLINK_THEME,
   LEGACY_THEME,
   THEME_TOKENS,
@@ -76,6 +80,15 @@ async function saveName(): Promise<void> {
    teks utama < 4.5:1 di kartu/latar; peringatan lembut utk pasangan lain. */
 const draft = ref<ThemeTokens>({ ...DEFAULT_THEME })
 const saved = ref<ThemeTokens>({ ...DEFAULT_THEME })
+/* Font body ikut disimpan bersama palet (PUT /api/theme). */
+const fontDraft = ref<FontKey>(DEFAULT_FONT)
+const fontSaved = ref<FontKey>(DEFAULT_FONT)
+const fontFamily = computed(() => FONT_OPTIONS.find((f) => f.key === fontDraft.value)?.family ?? 'Geist')
+function setFont(k: string): void {
+  fontDraft.value = FONT_OPTIONS.find((f) => f.key === k)?.key ?? DEFAULT_FONT
+  applyFont(fontDraft.value)
+  msg.value = ''
+}
 const loading = ref(true)
 const saving = ref(false)
 const msg = ref('')
@@ -118,8 +131,9 @@ async function save(): Promise<void> {
   saving.value = true
   msg.value = ''
   try {
-    await saveTheme(draft.value)
+    await saveTheme(draft.value, fontDraft.value)
     saved.value = { ...draft.value }
+    fontSaved.value = fontDraft.value
     msg.value = 'Tema tersimpan dan berlaku untuk semua pengguna.'
   } catch {
     msg.value = 'Gagal menyimpan tema (butuh login admin & BE jalan).'
@@ -130,6 +144,8 @@ async function save(): Promise<void> {
 function revert(): void {
   draft.value = { ...saved.value }
   applyTheme(saved.value)
+  fontDraft.value = fontSaved.value
+  applyFont(fontSaved.value)
   msg.value = ''
 }
 
@@ -147,6 +163,10 @@ onMounted(async () => {
       saved.value = { ...draft.value }
       applyTheme(draft.value)
     }
+    const f = FONT_OPTIONS.find((o) => o.key === data?.font)?.key ?? DEFAULT_FONT
+    fontDraft.value = f
+    fontSaved.value = f
+    applyFont(f)
   } catch {
     /* BE mati: palet default sudah berlaku, editor tetap bisa dipakai */
   } finally {
@@ -242,6 +262,22 @@ onMounted(async () => {
             <button type="button" class="btn-outline" @click="usePreset(LEGACY_THEME)">Navy legacy</button>
           </span>
         </div>
+        <div class="theme-row">
+          <label class="label" for="cms-font">Font (UI &amp; angka)</label>
+          <span class="theme-input">
+            <select
+              id="cms-font"
+              class="font-select"
+              :value="fontDraft"
+              @change="setFont(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="f in FONT_OPTIONS" :key="f.key" :value="f.key">{{ f.label }}</option>
+            </select>
+          </span>
+        </div>
+        <p class="font-preview" :style="{ fontFamily: `'${fontFamily}', system-ui, sans-serif` }">
+          Rp 487.650.000.000 · Laporan Keuangan · 1.284 nasabah
+        </p>
         <div v-for="t in THEME_TOKENS" :key="t.key" class="theme-row">
           <label class="label" :for="`tok-${t.key}`">{{ t.label }}</label>
           <span class="theme-input">
@@ -317,6 +353,28 @@ onMounted(async () => {
   margin: 0.6rem 0 0;
 }
 
+/* Pilihan font: select di kanan baris, contoh teks memakai font terpilih. */
+.font-select {
+  min-height: 44px;
+  min-width: 14rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--ink-16);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+}
+.font-preview {
+  margin: 0.5rem 0 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
 /* Editor tema: UI app: nama kiri, kontrol kanan (konvensi repo). */
 .theme-row {
   display: flex;
@@ -330,7 +388,14 @@ onMounted(async () => {
 .theme-row .label {
   font-weight: 600;
 }
+/* Label boleh turun baris SENDIRI; kontrol tetap di kanan (rapi di layar sempit) */
+.theme-row:has(.theme-input) .label {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
 .theme-input {
+  flex: none;
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;

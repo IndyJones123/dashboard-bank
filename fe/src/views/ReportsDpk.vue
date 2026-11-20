@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import api, { formatRupiah } from '../api'
+import api from '../api'
 import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
 import LineChart, { type LineSerie } from './LineChart.vue'
 import MoreDetails from './MoreDetails.vue'
@@ -9,6 +9,7 @@ import DetailTable, { type DetailCol } from './DetailTable.vue'
 import Sparkline from './Sparkline.vue'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
+import RpValue from './RpValue.vue'
 
 // Layout widget dari CMS; tiap grafik produk = 1 widget (grafik-tabungan, grafik-deposito)
 const w = useWidgets('reports-dpk')
@@ -211,7 +212,7 @@ onMounted(() => {
     <div class="wgrid">
     <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">DPK Tabungan + Deposito</p>
-        <p class="lead-value num">{{ loading ? '–' : formatRupiah(sumDes()) }}</p>
+        <p class="lead-value num"><RpValue :value="loading ? null : sumDes()" /></p>
         <p class="lead-note">Posisi {{ lastLabel }}, {{ kantors.length }} kantor</p>
     </section>
     <section v-if="w.show('ringkasan')" class="w lead-part" :style="w.style('ringkasan')">
@@ -224,14 +225,14 @@ onMounted(() => {
             <span class="ledger-spark">
               <Sparkline v-if="!loading" :values="sumSeries('DPK Tabungan')" aria-label="Tren DPK Tabungan per bulan" />
             </span>
-            <dd class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Tabungan')) }}</dd>
+            <dd class="num"><RpValue :value="loading ? null : sumDes('DPK Tabungan')" /></dd>
           </div>
           <div>
             <dt>DPK Deposito <small>{{ loading ? '–' : pctOf('DPK Deposito') }}</small></dt>
             <span class="ledger-spark">
               <Sparkline v-if="!loading" :values="sumSeries('DPK Deposito')" aria-label="Tren DPK Deposito per bulan" />
             </span>
-            <dd class="num">{{ loading ? '–' : formatRupiah(sumDes('DPK Deposito')) }}</dd>
+            <dd class="num"><RpValue :value="loading ? null : sumDes('DPK Deposito')" /></dd>
           </div>
         </dl>
     </section>

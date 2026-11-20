@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import api, { formatRupiah } from '../api'
-import { apiErrText, formatRpSingkat } from '../report-helpers'
+import api from '../api'
+import { apiErrText } from '../report-helpers'
 import MoreDetails from './MoreDetails.vue'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
 import { sysDate } from '../pby-helpers'
+import RpValue from './RpValue.vue'
 
 // Layout widget dari CMS (urutan, tampil/sembunyi, lebar)
 const w = useWidgets('reports-harian')
@@ -43,21 +44,12 @@ const tanggalIndo = computed(() => {
 })
 
 const isPct = (r: LkhRow): boolean => r.urut === '12' || r.urut === '14'
-const fmt = (r: LkhRow): string => {
-  if (r.saldo === null || r.saldo === undefined) return '–'
-  return isPct(r) ? `${Number(r.saldo).toFixed(2)} %` : formatRpSingkat(r.saldo)
-}
-
-/** Nilai kartu: placeholder saat loading / datanya null, persen utk NPF.
-    Rupiah disingkat (T/M/jt): lihat formatRpSingkat. */
-const cardVal = (v: number | null, pct = false): string => {
-  if (loading.value || v == null || Number.isNaN(v)) return '–'
-  return pct ? `${Number(v).toFixed(2)} %` : formatRpSingkat(v)
-}
-const cardFull = (v: number | null, pct = false): string => {
-  if (v == null || Number.isNaN(v)) return '–'
-  return pct ? `${Number(v).toFixed(2)} %` : formatRupiah(v)
-}
+/** Baris NPF (persen); baris Rupiah dirender RpValue. */
+const fmt = (r: LkhRow): string =>
+  r.saldo === null || r.saldo === undefined ? '–' : `${Number(r.saldo).toFixed(2)} %`
+/** Kartu NPF: placeholder saat loading / null. */
+const pctCard = (v: number | null): string =>
+  loading.value || v == null || Number.isNaN(v) ? '–' : `${Number(v).toFixed(2)} %`
 
 /** Pengelompokan 18 baris (urut query asli) jadi bagian-bagian laporan. */
 const SECTIONS: { title: string; uruts: string[] }[] = [
@@ -145,25 +137,25 @@ onMounted(async () => {
     <div class="wgrid">
     <section v-if="w.show('angka-utama')" class="w lead-part hero" :style="w.style('angka-utama')">
         <p class="lead-label">Total OS Pokok</p>
-        <p class="lead-value num" :title="cardFull(totalOS)">{{ cardVal(totalOS) }}</p>
+        <p class="lead-value num" ><RpValue :value="loading ? null : totalOS" /></p>
         <p class="lead-note">Outstanding portofolio per {{ tanggalIndo }}</p>
     </section>
       <dl v-if="w.show('ringkasan')" class="w lead-part ledger" :style="w.style('ringkasan')">
         <div>
           <dt>Kas <small>Posisi hari ini</small></dt>
-          <dd class="num" :title="cardFull(kas)">{{ cardVal(kas) }}</dd>
+          <dd class="num"><RpValue :value="loading ? null : kas" /></dd>
         </div>
         <div>
           <dt>Bank <small>Giro dan tabungan</small></dt>
-          <dd class="num" :title="cardFull(bank)">{{ cardVal(bank) }}</dd>
+          <dd class="num"><RpValue :value="loading ? null : bank" /></dd>
         </div>
         <div>
           <dt>NPF OJK <small>Batas sehat di bawah 5%</small></dt>
-          <dd class="num" :title="cardFull(npfOjk, true)">{{ cardVal(npfOjk, true) }}</dd>
+          <dd class="num">{{ pctCard(npfOjk) }}</dd>
         </div>
         <div>
           <dt>Laba Bulan Berjalan <small>Sejak awal bulan</small></dt>
-          <dd class="num" :title="cardFull(labaBerjalan)">{{ cardVal(labaBerjalan) }}</dd>
+          <dd class="num"><RpValue :value="loading ? null : labaBerjalan" /></dd>
         </div>
       </dl>
 
@@ -196,7 +188,7 @@ onMounted(async () => {
                   <td class="ta-c muted urut-col">{{ r.urut }}</td>
                   <td>{{ r.ket }}</td>
                   <td class="ta-r num" :class="{ pct: isPct(r) }"
-                      :title="isPct(r) ? undefined : formatRupiah(r.saldo)">{{ fmt(r) }}</td>
+                      ><template v-if="isPct(r)">{{ fmt(r) }}</template><RpValue v-else :value="r.saldo" /></td>
                 </tr>
               </template>
             </tbody>
