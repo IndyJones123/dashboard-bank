@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import api from '../api'
-import { apiErrText, kantorColor, shortMonth } from '../report-helpers'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import api, { formatRupiah } from '../api'
+import { apiErrText, KANTOR_PALETTE, shortMonth } from '../report-helpers'
 import RpValue from './RpValue.vue'
 import {
   KOL, RISK_COLORS, type Row, dateLabel, intText, lastMonth, monthLabel, npfOf, num, pctText, sumOf, sysDate, toPeriode,
 } from '../pby-helpers'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
-import type { PbyCol } from './PbyTable.vue'
+import PbyTable, { type PbyCol } from './PbyTable.vue'
 import PbyList from './PbyList.vue'
 import PbyStack, { type StackSeg } from './PbyStack.vue'
-import LineChart, { type LineSerie } from './LineChart.vue'
 
 /* ==========================================================================
    PEMBIAYAAN · LIST SALDO
@@ -102,7 +101,9 @@ const realCols = computed<PbyCol[]>(() => [
 const realNoa = computed(() => sumOf(real.lokasi, 'qty_noa') + sumOf(real.lokasi, 'qty'))
 const realPlf = computed(() => sumOf(real.lokasi, 'plf_noa') + sumOf(real.lokasi, 'plf'))
 
-/* ---------- OS per bulan ---------- */
+/* ---------- OS per bulan: 1 cabang dipilih via dropdown ----------
+   Tabel = rincian per produk bulan 1..12 utk cabang terpilih;
+   grafik batang di bawahnya = total cabang itu per bulan (tanpa komparasi). */
 const BLN = Array.from({ length: 12 }, (_, i) => `bln${String(i + 1).padStart(2, '0')}`)
 const osTahun = ref(String(new Date().getFullYear()))
 const osYears = computed(() => {
@@ -110,6 +111,8 @@ const osYears = computed(() => {
   return Array.from({ length: 8 }, (_, i) => String(top - i))
 })
 const os = reactive({ loading: true, error: '', rows: [] as Row[] })
+/** kdloc cabang terpilih (default: cabang pertama pada data). */
+const osCabang = ref('')
 
 async function loadOs(first = false): Promise<void> {
   os.loading = true
@@ -132,26 +135,92 @@ async function loadOs(first = false): Promise<void> {
     os.loading = false
   }
 }
+const osKantors = computed(() => [...new Set(os.rows.map((r) => String(r.kdloc)))].sort())
+const osKantorName = (k: string): string =>
+  String(os.rows.find((r) => String(r.kdloc) === k)?.nmcabang ?? `Kantor ${k}`)
+// Cabang terpilih harus selalu ada di daftar (data baru / ganti tahun)
+watch(osKantors, (list) => {
+  if (list.length && !list.includes(osCabang.value)) osCabang.value = list[0]
+})
+const osCabangRows = computed(() => os.rows.filter((r) => String(r.kdloc) === osCabang.value))
 const osCols: PbyCol[] = [
-  { key: 'nmcabang', label: 'Kantor', sub: 'kdloc' },
   { key: 'ket', label: 'Produk', sub: 'kdprd' },
   ...BLN.map((b, i) => ({ key: b, label: shortMonth(String(i + 1)), fmt: 'rp' as const })),
 ]
-const osKantors = computed(() => [...new Set(os.rows.map((r) => String(r.kdloc)))].sort())
-const osSeries = computed<LineSerie[]>(() =>
-  osKantors.value.map((k) => {
-    const rows = os.rows.filter((r) => String(r.kdloc) === k)
-    const name = String(rows[0]?.nmcabang ?? `Kantor ${k}`)
-    return {
-      key: k,
-      label: name,
-      color: kantorColor(k, osKantors.value),
-      // Bulan tanpa snapshot EOM -> SUM 0 di query: tampil putus, bukan jatuh ke nol
-      values: BLN.map((b) => sumOf(rows, b) || null),
-    }
-  }),
+
+/** Label ringkas utk sumbu/atas batang: M = miliar, Jt = juta. */
+function fmtOs(v: number): string {
+  const s = Math.abs(v)
+  const unit = s >= 1e9 ? 'M' : s >= 1e6 ? 'Jt' : s >= 1e3 ? 'rb' : ''
+  const n =
+    s >= 1e9 ? (s / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 1 })
+    : s >= 1e6 ? (s / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 })
+    : s >= 1e3 ? String(Math.round(s / 1e3))
+    : String(Math.round(s))
+  return `${n}${unit}`
+}
+
+/* Filter produk utk grafik batang ('all' | kdprd). Tabel tetap rincian semua produk. */
+const osProduk = ref('all')
+const osProds = computed(() => {
+  const map = new Map<string, string>()
+  for (const r of osCabangRows.value) map.set(String(r.kdprd), String(r.ket))
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([kdprd, ket]) => ({ kdprd, ket }))
+})
+// Filter harus valid utk cabang/tahun terpilih (data berganti -> kembali 'Semua')
+watch(osProds, (list) => {
+  if (osProduk.value !== 'all' && !list.some((p) => p.kdprd === osProduk.value)) osProduk.value = 'all'
+})
+const osChartRows = computed(() =>
+  osProduk.value === 'all'
+    ? osCabangRows.value
+    : osCabangRows.value.filter((r) => String(r.kdprd) === osProduk.value),
 )
-const osHasData = computed(() => osSeries.value.some((s) => s.values.some((v) => v != null)))
+/** Warna produk: palet data-encoding CVD-safe, identik dgn PbyList. */
+function osProdColor(kdprd: string): string {
+  const i = osProds.value.findIndex((p) => p.kdprd === kdprd)
+  return KANTOR_PALETTE[(i < 0 ? 0 : i) % KANTOR_PALETTE.length]
+}
+/** Produk yang membentuk batang = legenda. */
+const osLegend = computed(() =>
+  osProduk.value === 'all' ? osProds.value : osProds.value.filter((p) => p.kdprd === osProduk.value),
+)
+
+interface OsSeg { ket: string; color: string; y: number; h: number; v: number }
+interface OsBar { bulan: string; label: string; x: number; segs: OsSeg[]; top: number; total: number; text: string }
+/** Batang bertumpuk per produk: tinggi tumpukan = total bulan (skala dari nol),
+    segmen kosong (0) dilewat; tinggi minimum 1px supaya warna produk tetap terbaca. */
+const osBars = computed<OsBar[]>(() => {
+  const rows = osChartRows.value
+  const totals = BLN.map((b) => sumOf(rows, b))
+  const max = Math.max(...totals, 1)
+  const prods = osLegend.value
+  return BLN.map((bulan, i) => {
+    let y = 160
+    const segs: OsSeg[] = []
+    for (const p of prods) {
+      const v = sumOf(rows.filter((r) => String(r.kdprd) === p.kdprd), bulan)
+      if (v <= 0) continue
+      const h = Math.max(1, (v / max) * 120)
+      y -= h
+      segs.push({ ket: p.ket, color: osProdColor(p.kdprd), y, h, v })
+    }
+    return {
+      bulan,
+      label: shortMonth(String(i + 1)),
+      x: 46 + i * 42,
+      segs,
+      top: segs.length ? segs[segs.length - 1].y : 160,
+      total: totals[i],
+      text: fmtOs(totals[i]),
+    }
+  })
+})
+const osMaxVal = computed(() => Math.max(...BLN.map((b) => sumOf(osChartRows.value, b))))
+/** Gerbang section: cabang punya data (tabel tetap tampil walau filter produk kosong). */
+const osHasData = computed(() => osCabangRows.value.some((r) => BLN.some((b) => num(r[b]) !== 0)))
+/** Grafik ada isi setelah filter produk dipakai. */
+const osChartHasData = computed(() => osBars.value.some((b) => b.total > 0))
 
 const subLabel = (key: string) => (r: Row): string => `Subtotal ${String(r[key] ?? '')}`
 
@@ -272,14 +341,20 @@ onMounted(async () => {
         />
       </section>
 
-      <!-- OS per bulan -->
+      <!-- OS per bulan: pilih 1 cabang -> tabel per produk lalu grafik batang cabang itu -->
       <section v-if="w.show('os-bulanan')" class="w panel" :style="w.style('os-bulanan')">
         <div class="pby-head">
           <div>
             <h2>Outstanding per Bulan</h2>
-            <p class="sub">Outstanding pokok akhir bulan {{ osTahun }}, per kantor dan produk.</p>
+            <p class="sub">Outstanding pokok akhir bulan {{ osTahun }}{{ osCabang ? `, ${osKantorName(osCabang)}` : '' }}, per produk.</p>
           </div>
           <div class="pby-ctrl filters">
+            <label>
+              Kantor
+              <select v-model="osCabang" :disabled="!osKantors.length">
+                <option v-for="k in osKantors" :key="k" :value="k">{{ osKantorName(k) }}</option>
+              </select>
+            </label>
             <label>
               Tahun
               <select v-model="osTahun" @change="loadOs()">
@@ -290,17 +365,61 @@ onMounted(async () => {
         </div>
         <p v-if="os.loading" class="muted">Memuat outstanding bulanan…</p>
         <p v-else-if="os.error" class="alert">{{ os.error }}</p>
-        <p v-else-if="!osHasData" class="muted">Belum ada data akhir bulan untuk {{ osTahun }}.</p>
+        <p v-else-if="!osHasData" class="muted">Belum ada data akhir bulan untuk {{ osTahun }}{{ osCabang ? ` di ${osKantorName(osCabang)}` : '' }}.</p>
         <template v-else>
-          <LineChart
-            :labels="BLN.map((_, i) => shortMonth(String(i + 1)))"
-            :series="osSeries"
-            :aria-label="`Grafik outstanding pembiayaan per kantor ${osTahun}`"
-          />
-          <p class="note">Garis = total semua produk per kantor. Rincian per produk di tabel.</p>
-          <PbyList :cols="osCols" :rows="os.rows" head-key="bln12" subtotal-by="kdloc" :subtotal-label="subLabel('nmcabang')" />
+          <PbyTable :cols="osCols" :rows="osCabangRows" empty="Belum ada data produk pada kantor ini." />
+          <div class="pby-ctrl filters" style="margin-top: 1rem">
+            <label>
+              Produk
+              <select v-model="osProduk" :disabled="!osProds.length">
+                <option value="all">Semua produk</option>
+                <option v-for="p in osProds" :key="p.kdprd" :value="p.kdprd">{{ p.ket }}</option>
+              </select>
+            </label>
+            <ul v-if="osChartHasData" class="os-legend" aria-label="Warna produk">
+              <li v-for="p in osLegend" :key="p.kdprd">
+                <i :style="{ background: osProdColor(p.kdprd) }" aria-hidden="true" />{{ p.ket }}
+              </li>
+            </ul>
+          </div>
+          <div v-if="osChartHasData" class="chart-wrap" style="margin-top: 0.75rem">
+            <svg viewBox="0 0 560 180" role="img" :aria-label="`Grafik batang outstanding ${osKantorName(osCabang)} ${osTahun}`">
+              <g v-for="g in [0, 1, 2, 3, 4]" :key="g">
+                <line class="l-grid" x1="44" :y1="40 + g * 30" x2="550" :y2="40 + g * 30" />
+                <text class="t-axis" x="38" :y="44 + g * 30" text-anchor="end" font-size="10">
+                  {{ g === 4 ? '0' : fmtOs(osMaxVal * (4 - g) / 4) }}
+                </text>
+              </g>
+              <line class="l-base" x1="44" y1="160" x2="550" y2="160" />
+              <g v-for="(b, bi) in osBars" :key="b.bulan">
+                <g class="svg-bar" :style="{ '--i': bi }">
+                  <rect
+                    v-for="s in b.segs" :key="s.ket"
+                    :x="b.x" width="26" :y="s.y" :height="s.h" :fill="s.color"
+                  >
+                    <title>{{ b.label }} · {{ s.ket }}: {{ formatRupiah(s.v) }}</title>
+                  </rect>
+                </g>
+                <text class="svg-bar-val t-val" :x="b.x + 13" :y="b.top - 5" text-anchor="middle" font-size="8.5" :style="{ '--i': bi }">{{ b.text }}</text>
+                <text class="svg-bar-x t-axis" :x="b.x + 13" y="175" text-anchor="middle" font-size="10" :style="{ '--i': bi }">{{ b.label }}</text>
+              </g>
+            </svg>
+          </div>
+          <p v-else class="muted" style="margin-top: 0.75rem">Tidak ada data utk produk ini pada kantor/tahun terpilih.</p>
+          <p class="note">Batang bertumpuk = total outstanding per bulan, dipecah per produk (warna = produk, lihat legenda). Pilih Produk utk menyaring grafik; tabel di atas tetap menampilkan semua produk.</p>
         </template>
       </section>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Legenda warna produk di samping dropdown filter grafik */
+.os-legend {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1rem;
+  margin: 0; padding: 0; list-style: none;
+  font-size: var(--fs-sm); color: var(--muted);
+}
+.os-legend li { display: inline-flex; align-items: center; gap: 0.4rem; }
+.os-legend i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+</style>

@@ -119,6 +119,7 @@ _M_KANTOR = [
 _M_PRODUK = [("101", "MURABAHAH"), ("102", "MUSYARAKAH"), ("103", "IJARAH"), ("104", "QARDH")]
 _M_AO = [("A01", "AHMAD FAUZI"), ("A02", "BUDI SANTOSO"), ("A03", "CITRA LESTARI"),
          ("A04", "DEWI RAHMA"), ("A05", "EKO PRASETYO")]
+_M_AO_BY_CODE = dict(_M_AO)
 _M_W = {"01": 1.0, "02": 0.7, "03": 0.5, "04": 0.62, "05": 0.45, "06": 0.38,
         "07": 0.33, "08": 0.41, "09": 0.36, "10": 0.29}
 
@@ -223,6 +224,7 @@ def _m_nasabah() -> list[dict[str, Any]]:
         out.append({
             "nokontrak": f"{k}{p}{240000 + i * 37:07d}", "nocif": f"{k}{510000 + i * 13:07d}",
             "nama": _M_NAMA[i % len(_M_NAMA)], "kdprd": p, "kdloc": k,
+            "kdaoh": _M_AO[i % len(_M_AO)][0],
             "colbaru": 1 + min(4, qty // 2), "osmdlc": osm, "osmgnc": round(osm * 0.22, 2),
             "qty": qty, "tgkmdl": tm, "tgkmgn": tg, "tgk": round(tm + tg, 2),
         })
@@ -235,11 +237,15 @@ def _m_tunggakan(sec: str) -> list[dict[str, Any]]:
         return nsb
     cols = ("osmdlc", "osmgnc", "tgkmdl", "tgkmgn", "tgk")
     if sec == "ao":
-        out = []
-        for i, (a, n) in enumerate(_M_AO):
-            part = nsb[i::len(_M_AO)]
-            out.append({"kdaoh": a, "nmao": n, **{c: round(sum(x[c] for x in part), 2) for c in cols}})
-        return out
+        # per (kdloc, AO) — sama dgn GROUP BY kdloc, kdaoh di SQL asli
+        agg: dict[tuple[str, str], dict[str, Any]] = {}
+        for x in nsb:
+            key = (x["kdloc"], x["kdaoh"])
+            a = agg.setdefault(key, {"kdloc": key[0], "kdaoh": key[1],
+                                     "nmao": _M_AO_BY_CODE.get(key[1], ""), **{c: 0.0 for c in cols}})
+            for c in cols:
+                a[c] = round(a[c] + x[c], 2)
+        return sorted(agg.values(), key=lambda r: (r["nmao"], r["kdloc"]))
     names = {(k, p): (nk, np) for k, nk, p, np in _lp()}
     agg: dict[tuple[str, str], dict[str, Any]] = {}
     for x in nsb:

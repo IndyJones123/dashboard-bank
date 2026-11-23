@@ -51,7 +51,8 @@ GROUP BY A.kdloc,A.nmcabang, A.kdprd, A.nmprd
 ORDER BY A.kdloc
 
 -- Tunggakan Base On AO
-SELECT A.kdaoh,
+SELECT A.kdloc,
+		A.kdaoh,
 		IsNull(A.nmao,'') as nmao,
 		SUM(A.osmdlc) as osmdlc,
 		SUM(A.osmgnc) as osmgnc,
@@ -90,7 +91,7 @@ FROM (
 			LEFT JOIN AO ON AO.kdao = TOFLMB.kdaoh }
 	WHERE TOFLMB.stsrec in ('A','N') AND AA.tgk > 0
 ) A
-GROUP BY A.kdaoh, A.nmao
+GROUP BY A.kdloc, A.kdaoh, A.nmao
 ORDER BY A.nmao
 
 -- Tunggakan Nasabah

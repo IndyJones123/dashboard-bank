@@ -180,7 +180,7 @@ onMounted(async () => {
     await loadPublic()
     await loadPremium()
   } catch {
-    error.value = 'Gagal memuat dashboard. API tidak merespons — coba lagi nanti.'
+    error.value = 'Gagal memuat dashboard. Pastikan BE jalan di http://localhost:8000'
   } finally {
     loading.value = false
   }

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '../api'
 import { apiErrText } from '../report-helpers'
 import { DPD, RISK_COLORS, type Row, dateLabel, intText, sumOf, sysDate } from '../pby-helpers'
 import { useWidgets } from '../stores/widgets'
 import WidgetNotice from './WidgetNotice.vue'
-import type { PbyCol } from './PbyTable.vue'
+import PbyTable, { type PbyCol } from './PbyTable.vue'
 import PbyList from './PbyList.vue'
 import PbyStack, { type StackSeg } from './PbyStack.vue'
 import RpValue from './RpValue.vue'
@@ -24,7 +24,7 @@ type View = 'lokasi' | 'ao'
 
 const dpd = reactive({ view: 'lokasi' as View, loading: true, error: '', lokasi: [] as Row[], ao: [] as Row[] })
 const tgk = reactive({
-  view: 'lokasi' as View, loading: true, error: '',
+  loading: true, error: '',
   lokasi: [] as Row[], ao: [] as Row[], nasabah: [] as Row[],
 })
 
@@ -87,19 +87,33 @@ const dpdCols = computed<PbyCol[]>(() => [
 ])
 
 /* ---------- Tunggakan ---------- */
-const tgkCols = computed<PbyCol[]>(() => [
-  ...(tgk.view === 'lokasi'
-    ? [
-        { key: 'nmcabang', label: 'Kantor', sub: 'kdloc' },
-        { key: 'nmprd', label: 'Produk', sub: 'kdprd' },
-      ]
-    : [{ key: 'nmao', label: 'AO', sub: 'kdaoh' }]),
+/* Filter kantor: tabel per produk + tabel AO di bawahnya (tanpa toggle). */
+const tgkKantor = ref('')
+const tgkKantors = computed(() => [...new Set(tgk.lokasi.map((r) => String(r.kdloc)))].sort())
+const tgkKantorName = computed(() => {
+  const m = new Map<string, string>()
+  for (const r of tgk.lokasi) m.set(String(r.kdloc), String(r.nmcabang ?? r.kdloc))
+  return m
+})
+watch(tgkKantors, (list) => {
+  if (!list.length) tgkKantor.value = ''
+  else if (!tgkKantor.value || !list.includes(tgkKantor.value)) tgkKantor.value = list[0]
+})
+const tgkCabangRows = computed(() =>
+  tgk.lokasi.filter((r) => !tgkKantor.value || String(r.kdloc) === tgkKantor.value),
+)
+const tgkAoRows = computed(() =>
+  tgk.ao.filter((r) => !tgkKantor.value || String(r.kdloc) === tgkKantor.value),
+)
+const TGK_MONEY: PbyCol[] = [
   { key: 'osmdlc', label: 'Pokok', fmt: 'rp', group: 'Outstanding (Rp)' },
   { key: 'osmgnc', label: 'Margin', fmt: 'rp', group: 'Outstanding (Rp)' },
   { key: 'tgkmdl', label: 'Pokok', fmt: 'rp', group: 'Tunggakan (Rp)' },
   { key: 'tgkmgn', label: 'Margin', fmt: 'rp', group: 'Tunggakan (Rp)' },
   { key: 'tgk', label: 'Total', fmt: 'rp', group: 'Tunggakan (Rp)' },
-])
+]
+const tgkCols: PbyCol[] = [{ key: 'nmprd', label: 'Produk', sub: 'kdprd' }, ...TGK_MONEY]
+const tgkAoCols: PbyCol[] = [{ key: 'nmao', label: 'AO', sub: 'kdaoh' }, ...TGK_MONEY]
 
 /* ---------- Daftar nasabah ---------- */
 const q = ref('')
@@ -204,21 +218,28 @@ onMounted(async () => {
             <h2>Tunggakan</h2>
             <p class="sub">Tagihan jatuh tempo s.d. hari ini yang belum dibayar, untuk kontrak aktif.</p>
           </div>
-          <div class="pby-ctrl">
-            <div class="segmented" role="group" aria-label="Kelompokkan tunggakan">
-              <button type="button" :class="{ on: tgk.view === 'lokasi' }" @click="tgk.view = 'lokasi'">Kantor &amp; Produk</button>
-              <button type="button" :class="{ on: tgk.view === 'ao' }" @click="tgk.view = 'ao'">AO</button>
-            </div>
+          <div class="pby-ctrl filters">
+            <label>
+              Kantor
+              <select v-model="tgkKantor" :disabled="!tgkKantors.length">
+                <option v-for="k in tgkKantors" :key="k" :value="k">{{ tgkKantorName.get(k) ?? k }}</option>
+              </select>
+            </label>
           </div>
         </div>
         <p v-if="tgk.loading" class="muted">Memuat tunggakan…</p>
         <p v-else-if="tgk.error" class="alert">{{ tgk.error }}</p>
-        <PbyList
-          v-else :cols="tgkCols" head-key="tgk" :rows="tgk.view === 'lokasi' ? tgk.lokasi : tgk.ao"
-          :subtotal-by="tgk.view === 'lokasi' ? 'kdloc' : undefined"
-          :subtotal-label="subLabel('nmcabang')"
-          empty="Tidak ada tunggakan."
-        />
+        <template v-else>
+          <PbyTable
+            :cols="tgkCols" :rows="tgkCabangRows"
+            empty="Tidak ada tunggakan pada kantor ini."
+          />
+          <h3 class="tgk-ao-head">Per AO — kantor terpilih</h3>
+          <PbyTable
+            :cols="tgkAoCols" :rows="tgkAoRows"
+            empty="Tidak ada tunggakan pada AO di kantor ini."
+          />
+        </template>
       </section>
 
       <!-- Nasabah menunggak -->
@@ -249,3 +270,15 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Pemisah tabel produk & tabel AO pada seksi Tunggakan */
+.tgk-ao-head {
+  margin: 1.25rem 0 0.5rem;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+</style>
