@@ -12,6 +12,7 @@ import os
 import re
 import unicodedata
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,7 +35,11 @@ app = FastAPI(title="Bank Dashboard API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("CORS_ORIGIN", "http://localhost:5173")],
+    allow_origins=[
+        o.strip()
+        for o in os.getenv("CORS_ORIGIN", "http://localhost:5173").split(",")
+        if o.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -395,6 +400,81 @@ def pembiayaan_realisasi(
     return {"mode": "bulan" if periode else "berjalan", "periode": periode, **data}
 
 
+def _pby_year(
+    key: str, tahun: str, sampai: int, extra: dict[str, str], view: str,
+    names: dict[str, str], metrics: dict[str, Callable[[dict], float]],
+) -> list[dict]:
+    """Jalankan seksi `view` ('lokasi' | 'ao') query `key` utk bulan 1..`sampai`
+    pada `tahun` (paralel), lalu pivot per baris (kdloc+kdprd atau kdaoh):
+    tiap metrik jadi kolom <prefix>01..<prefix>12.
+    `names` = {kolom keluaran: kolom sumber} utk kolom identitas."""
+    sql, order = QP.sections(key)[view]
+    ids = ("kdloc", "kdprd") if view == "lokasi" else ("kdaoh",)
+
+    def month(m: int) -> list[dict]:
+        params = QP.build_params(order, {"@periode": f"{tahun}{m:02d}", **extra})
+        return QP.clean_rows(db.run_query(sql, params))
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        per_month = list(ex.map(month, range(1, sampai + 1)))
+
+    by: dict[tuple[str, ...], dict] = {}
+    for m, rows in enumerate(per_month, start=1):
+        for r in rows:
+            k = tuple(str(r.get(i)) for i in ids)
+            cur = by.setdefault(k, {
+                **{i: r.get(i) for i in ids},
+                **{out: r.get(src) for out, src in names.items()},
+                **{f"{p}{i:02d}": 0.0 for p in metrics for i in range(1, 13)},
+            })
+            for p, fn in metrics.items():
+                cur[f"{p}{m:02d}"] += fn(r)
+    return sorted(by.values(), key=lambda r: tuple(str(r[i]) for i in ids))
+
+
+def _f(r: dict, *cols: str) -> float:
+    return sum(float(r.get(c) or 0) for c in cols)
+
+
+_VIEW = r"^(lokasi|ao)$"
+
+
+@app.get("/api/pembiayaan/realisasi-tahun")
+def pembiayaan_realisasi_tahun(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    sampai: int = Query(12, ge=1, le=12),
+    view: str = Query("lokasi", pattern=_VIEW),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Realisasi (plafon dropping, nasabah baru + lama) per lokasi & produk
+    atau per AO, bulan 1..`sampai` -> kolom bln01..bln12 (query 002 per bulan).
+    Seksi AO query 002 tidak punya filter kantor -> selalu semua kantor."""
+    _viewer(creds, "pembiayaan-saldo")
+    names = {"nmkantor": "nmkantor", "nmprd": "nmprd"} if view == "lokasi" else {"nmao": "nmao"}
+    rows = _pby_year("realisasi_bulan", tahun, sampai, {}, view, names,
+                     {"bln": lambda r: _f(r, "plf_noa", "plf")})
+    return {"tahun": tahun, "sampai": sampai, "view": view, view: rows}
+
+
+@app.get("/api/pembiayaan/npf-tahun")
+def pembiayaan_npf_tahun(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    sampai: int = Query(12, ge=1, le=12),
+    view: str = Query("lokasi", pattern=_VIEW),
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """NPF akhir bulan per lokasi & produk atau per AO (kdloc '00' = semua kantor),
+    bulan 1..`sampai`: bln01..12 = nominal NPF (Kol 3+4+5), os01..12 = OS pokok."""
+    _viewer(creds, "pembiayaan-saldo")
+    names = {"nmkantor": "nmcabang", "nmprd": "ket"} if view == "lokasi" else {"nmao": "nmao"}
+    rows = _pby_year("npf_bulan", tahun, sampai, {"@kdloc": kdloc}, view, names, {
+        "bln": lambda r: _f(r, "coll3", "coll4", "coll5"),
+        "os": lambda r: _f(r, "os"),
+    })
+    return {"tahun": tahun, "sampai": sampai, "view": view, "kdloc": kdloc, view: rows}
+
+
 @app.get("/api/pembiayaan/npf")
 def pembiayaan_npf(
     periode: str | None = Query(None, pattern=_PERIODE),
@@ -421,6 +501,17 @@ def pembiayaan_os(
     _viewer(creds, "pembiayaan-saldo")
     data = _pby_run("os_bulan", {"@thn": tahun, "@kdloc": kdloc})
     return {"tahun": tahun, "kdloc": kdloc, **data}
+
+
+@app.get("/api/pembiayaan/os-berjalan")
+def pembiayaan_os_berjalan(
+    kdloc: str = Query("00", pattern=r"^\d{2}$"),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """OS pokok + margin posisi berjalan per lokasi & produk (query 004)."""
+    _viewer(creds, "pembiayaan-saldo")
+    data = _pby_run("os_berjalan", {"@kdloc": kdloc})
+    return {"kdloc": kdloc, **data}
 
 
 @app.get("/api/pembiayaan/dpd")

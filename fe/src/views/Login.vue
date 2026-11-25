@@ -18,8 +18,12 @@ async function onSubmit(): Promise<void> {
     await login(username.value.trim(), password.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.push(redirect)
-  } catch {
-    error.value = 'Username atau password salah. Periksa kembali lalu coba lagi.'
+  } catch (e) {
+    const status = (e as { response?: { status?: number } }).response?.status
+    error.value =
+      status === 401 || status === 400
+        ? 'Username atau password salah. Periksa kembali lalu coba lagi.'
+        : 'Tidak bisa terhubung ke server. Pastikan backend jalan di port 8000.'
   } finally {
     loading.value = false
   }

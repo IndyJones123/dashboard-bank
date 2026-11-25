@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, reactive, ref, useId, watch } from 'vue'
 import type { PbyCol, PbyFmt } from './PbyTable.vue'
 import RpValue from './RpValue.vue'
 import { KANTOR_PALETTE } from '../report-helpers'
@@ -21,6 +21,9 @@ const props = withDefaults(
     rows: Record<string, unknown>[]
     /** Kolom angka utama tiap baris (default: kolom Rupiah pertama). */
     headKey?: string
+    /** Toggle ANGKA PER KARTU (mis. OS pokok / Margin): tiap kartu punya
+        pilihan sendiri, default pilihan pertama. Tanpa prop ini -> lama. */
+    headChoices?: { key: string; label: string }[]
     subtotalBy?: string
     subtotalLabel?: (row: Record<string, unknown>) => string
     total?: boolean
@@ -58,6 +61,22 @@ const head = computed<PbyCol | undefined>(() =>
   ?? props.cols.find((c) => c.fmt === 'rp')
   ?? props.cols.find(isNum),
 )
+/* ---------- Angka per kartu (toggle headChoices) ---------- */
+/** Pilihan kolom angka tiap kartu (key kartu -> key kolom). */
+const headSel = reactive<Record<string, string>>({})
+/** Kolom angka kartu: hasil toggle, atau angka utama global bila tanpa toggle. */
+const hcol = (c: Card): PbyCol | undefined => {
+  if (!props.headChoices?.length) return head.value
+  const k = headSel[c.key] ?? props.headChoices[0].key
+  return props.cols.find((x) => x.key === k) ?? head.value
+}
+const hkey = (c: Card): string => hcol(c)?.key ?? ''
+/** Angka (bulat) baris pada kartu c. */
+const hnum = (c: Card, d: Record<string, unknown>): number =>
+  Math.round(Number(d[hkey(c)]) || 0)
+/** Teks angka baris pada kartu c (fmt kolom aktif). */
+const htext = (c: Card, d: Record<string, unknown>): string =>
+  fmt(d[hkey(c)], hcol(c)?.fmt)
 const textCols = computed(() => props.cols.filter((c) => !isNum(c)))
 const titleCol = computed<PbyCol | undefined>(() => textCols.value[0])
 const metaCols = computed(() => textCols.value.slice(1))
@@ -137,7 +156,7 @@ const flatRows = computed(() => (props.subtotalBy ? [] : visible.value))
    berurutan sesuai baris kartu; warna = palet kantor (data encoding). */
 interface Slice { key: string; color: string; pct: number; dash: string; off: number; label: string }
 function donutOf(c: Card): { slices: Slice[]; total: number } {
-  const vals = c.rows.map((r) => Math.max(0, Number(r[head.value?.key ?? '']) || 0))
+  const vals = c.rows.map((r) => Math.max(0, Number(r[hkey(c)]) || 0))
   const total = vals.reduce((a, b) => a + b, 0)
   let acc = 0
   const slices: Slice[] = []
@@ -158,7 +177,7 @@ function donutOf(c: Card): { slices: Slice[]; total: number } {
 }
 /** Porsi produk i dalam kartu kantor (%), dari angka utama query. */
 function shareOf(c: Card, i: number): string {
-  const k = head.value?.key ?? ''
+  const k = hkey(c)
   const total = c.rows.reduce((a, r) => a + Math.max(0, Number(r[k]) || 0), 0)
   if (!total) return '–'
   const v = Math.max(0, Number(c.rows[i][k]) || 0)
@@ -227,13 +246,23 @@ const prodSub = (d: Record<string, unknown>): string => {
             <div class="pl-card-name">
               {{ c.title }}
               <small v-if="c.sub" class="pl-sub">{{ c.sub }}</small>
-              <span v-if="head" class="pl-card-sum num">
-                <RpValue v-if="isRp(head)" :value="Math.round(Number(c.sum[head.key]) || 0)" />
-                <template v-else>{{ fmt(c.sum[head.key], head.fmt) }}</template>
+              <span v-if="hcol(c)" class="pl-card-sum num">
+                <RpValue v-if="isRp(hcol(c))" :value="hnum(c, c.sum)" />
+                <template v-else>{{ htext(c, c.sum) }}</template>
               </span>
             </div>
           </div>
         </header>
+        <!-- Toggle angka kartu (headChoices): pilih OS pokok / Margin -->
+        <div
+          v-if="headChoices?.length" class="segmented pl-toggle"
+          role="group" aria-label="Angka yang ditampilkan"
+        >
+          <button
+            v-for="hc in headChoices" :key="hc.key" type="button"
+            :class="{ on: hkey(c) === hc.key }" @click="headSel[c.key] = hc.key"
+          >{{ hc.label }}</button>
+        </div>
         <ul class="pl-lines">
           <li v-for="(r, i) in c.rows" :key="i" class="pl-line">
             <details v-if="detailCols.length" class="pl-item">
@@ -244,7 +273,7 @@ const prodSub = (d: Record<string, unknown>): string => {
                   <small v-if="prodSub(r)" class="pl-sub">{{ prodSub(r) }}</small>
                 </span>
                 <span class="pl-val num">
-                  <span v-if="head"><RpValue v-if="isRp(head)" :value="headOf(r)" bare /><template v-else>{{ fmt(r[head.key], head.fmt) }}</template></span>
+                  <span v-if="hcol(c)"><RpValue v-if="isRp(hcol(c))" :value="hnum(c, r)" bare /><template v-else>{{ htext(c, r) }}</template></span>
                   <small class="pl-pct">{{ shareOf(c, i) }}</small>
                   <svg class="pl-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
                 </span>
@@ -269,7 +298,7 @@ const prodSub = (d: Record<string, unknown>): string => {
             <div v-else class="pl-row">
               <span class="pl-prod">{{ lineMeta(r) || lineTitle(r) }}</span>
               <span class="pl-val num">
-                <span v-if="head"><RpValue v-if="isRp(head)" :value="headOf(r)" bare /><template v-else>{{ fmt(r[head.key], head.fmt) }}</template></span>
+                <span v-if="hcol(c)"><RpValue v-if="isRp(hcol(c))" :value="hnum(c, r)" bare /><template v-else>{{ htext(c, r) }}</template></span>
                 <small class="pl-pct">{{ shareOf(c, i) }}</small>
               </span>
             </div>
@@ -372,6 +401,9 @@ const prodSub = (d: Record<string, unknown>): string => {
   padding: 0.45rem 0.55rem;
 }
 .pl-card.total { grid-column: 1 / -1; background: var(--surface-2); border-color: var(--ink-16); }
+/* Toggle angka per kartu (headChoices): lebar penuh, chip kecil */
+.pl-toggle { display: flex; width: 100%; margin-top: 0.35rem; padding: 2px; }
+.pl-toggle button { flex: 1; min-height: 24px; padding: 0.1rem 0.25rem; font-size: 0.72rem; }
 .pl-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; min-width: 0; }
 .pl-card-name { font-weight: 600; color: var(--ink); font-size: var(--fs-sm); overflow-wrap: anywhere; min-width: 0; }
 .pl-card-sum { font-weight: 700; color: var(--ink); white-space: nowrap; font-size: var(--fs-sm); }

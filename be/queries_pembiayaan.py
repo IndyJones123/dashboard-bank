@@ -30,6 +30,7 @@ FILES: dict[str, str] = {
     "npf_berjalan": "Pembiayaan NPF berjalan.sql",
     "npf_bulan": "Pembiayaan NPF Bulan.sql",
     "os_bulan": "Pembiayaan OS Bulan.sql",
+    "os_berjalan": "004 Pembiayaan OS Berjalan.sql",
     "tunggakan": "Pembiayaan Tunggakan.sql",
 }
 
@@ -168,7 +169,9 @@ def _coll(seed: tuple, scale: float) -> dict[str, Any]:
 def _m_npf(sec: str, params: tuple, has_kdloc: bool) -> list[dict[str, Any]]:
     seed = params[0] if params and len(params) > 1 else "berjalan"
     if sec == "ao":
-        return [{"kdaoh": a, "nmao": n, **_coll((seed, a), 1.6)} for a, n in _M_AO]
+        f = str(params[-1]) if has_kdloc and params else "00"
+        scale = 1.6 if f in ("", "00") else 1.6 * _M_W.get(f, 0.5) / 5
+        return [{"kdaoh": a, "nmao": n, **_coll((seed, a, f), scale)} for a, n in _M_AO]
     return [{"kdloc": k, "nmcabang": nk, "kdprd": p, "ket": np, **_coll((seed, k, p), _M_W[k])}
             for k, nk, p, np in _lp() if _kdloc_ok(params, has_kdloc, k)]
 
@@ -184,6 +187,20 @@ def _m_os(params: tuple) -> list[dict[str, Any]]:
         for m in range(1, 13):
             row[f"bln{m:02d}"] = round(base * (1 + 0.012 * m + (_rnd(thn, k, p, m) - 0.5) * 0.03), 2)
         out.append(row)
+    return out
+
+
+def _m_os_berjalan(params: tuple) -> list[dict[str, Any]]:
+    """004 — OS pokok + margin per kantor x produk, posisi berjalan.
+    Pokoknya sengaja diambil dari _coll() milik NPF berjalan supaya di mock
+    jumlahnya persis sama dgn angka hero (di DB asli juga sama)."""
+    out = []
+    for k, nk, p, np in _lp():
+        if not _kdloc_ok(params, True, k):
+            continue
+        pokok = _coll(("berjalan", k, p), _M_W[k])["os"]
+        out.append({"kdloc": k, "nmkantor": nk, "kdprd": p, "nmprd": np,
+                    "osmdlc": pokok, "osmgnc": round(pokok * (0.08 + _rnd("osbm", k, p) * 0.12), 2)})
     return out
 
 
@@ -274,6 +291,8 @@ def mock_rows(name: str, params: tuple | list = ()) -> list[dict[str, Any]]:
             return _m_npf(sec, params, True)
         if key == "os_bulan":
             return _m_os(params)
+        if key == "os_berjalan":
+            return _m_os_berjalan(params)
         if key == "dpd":
             return _m_dpd(sec)
         if key == "tunggakan":

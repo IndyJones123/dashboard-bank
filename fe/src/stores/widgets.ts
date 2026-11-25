@@ -119,11 +119,12 @@ export const WIDGET_PAGES: PageDef[] = [
     label: 'Pembiayaan: List Saldo',
     to: '/pembiayaan/saldo',
     widgets: [
+      // Tata letak sama dgn Tagihan: angka utama (kiri) + ledger ringkasan (kanan)
       { id: 'angka-utama', label: 'Outstanding pembiayaan', kind: 'angka', span: 7 },
-      { id: 'ringkasan', label: 'NPF dan realisasi', kind: 'ringkasan', span: 5 },
+      { id: 'ringkasan', label: 'Margin, NPF dan realisasi', kind: 'ringkasan', span: 5 },
+      { id: 'os-bulanan', label: 'Outstanding', kind: 'grafik', span: 12 },
       { id: 'kolektibilitas', label: 'Kolektibilitas & NPF', kind: 'tabel', span: 12 },
       { id: 'realisasi', label: 'Realisasi pembiayaan', kind: 'tabel', span: 12 },
-      { id: 'os-bulanan', label: 'Outstanding per bulan', kind: 'grafik', span: 12 },
     ],
   },
   {
