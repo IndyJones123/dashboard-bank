@@ -225,11 +225,11 @@ onBeforeUnmount(() => {
             :aria-pressed="!off.includes(s.key)"
             @click="toggleSeries(s.key)"
           >
-            <i class="lc-dot" :style="{ background: s.color }" aria-hidden="true" />
+            <i class="lc-dot" :class="{ dash: s.dash }" :style="s.dash ? { color: s.color } : { background: s.color }" aria-hidden="true" />
             {{ s.label }}
           </button>
           <template v-else>
-            <i class="lc-dot" :style="{ background: s.color }" aria-hidden="true" />
+            <i class="lc-dot" :class="{ dash: s.dash }" :style="s.dash ? { color: s.color } : { background: s.color }" aria-hidden="true" />
             {{ s.label }}
           </template>
         </li>
@@ -286,6 +286,8 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 .lc-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+/* Seri putus-putus (mis. target): ikon garis putus, bukan titik */
+.lc-dot.dash { width: 16px; height: 0; border-radius: 0; border-top: 2px dashed currentColor; }
 /* Chip kantor: tap/klik untuk tampil/sembunyi */
 .lc-chip {
   display: inline-flex; align-items: center; gap: 0.4rem;

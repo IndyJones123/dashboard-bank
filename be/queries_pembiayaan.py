@@ -32,6 +32,8 @@ FILES: dict[str, str] = {
     "os_bulan": "Pembiayaan OS Bulan.sql",
     "os_berjalan": "004 Pembiayaan OS Berjalan.sql",
     "tunggakan": "Pembiayaan Tunggakan.sql",
+    "jatuh_tempo": "Pembiayaan JatuhTempo.sql",
+    "target_ao": "003 Pembiayaan Target AO.sql",
 }
 
 # Tanggal sistem (ddmmyyyy) — sama dgn sumber @tgltrn di query 'berjalan'
@@ -48,12 +50,14 @@ _cache: dict[str, tuple[float, dict[str, tuple[str, tuple[str, ...]]]]] = {}
 
 def _section_name(comment: str) -> str:
     c = comment.lower()
-    if "nasabah" in c:
-        return "nasabah"
+    # lokasi/AO dulu: komentar seperti "Nasabah Jatuh Tempo By AO" juga
+    # memuat kata 'nasabah' tapi seksinya per AO, bukan daftar nasabah
     if "lokasi" in c:
         return "lokasi"
     if re.search(r"\bao\b", c):
         return "ao"
+    if "nasabah" in c:
+        return "nasabah"
     return re.sub(r"[^a-z0-9]+", "_", c).strip("_") or "data"
 
 
@@ -83,6 +87,10 @@ def _parse(key: str, raw: str) -> dict[str, tuple[str, tuple[str, ...]]]:
         name = _section_name(m.group(1))
         sql = f"/* name:pby_{key}_{name} */\n{_PRELUDE}{header}\n-- {m.group(1)}\n{body}\n"
         out[name] = (sql, tuple(order))
+    if not out:
+        # Semua komentar tanpa isi (mis. 003 Target AO: query utama di atas,
+        # sisanya baris SQL yg di-comment) -> seluruh file = 1 seksi 'data'
+        return {"data": (f"/* name:pby_{key}_data */\n{_PRELUDE}{text}", tuple(order))}
     return out
 
 
@@ -275,6 +283,71 @@ def _m_tunggakan(sec: str) -> list[dict[str, Any]]:
     return [agg[k] for k in sorted(agg)]
 
 
+def _m_jatuh_tempo(sec: str) -> list[dict[str, Any]]:
+    """Pembiayaan JatuhTempo — kontrak aktif dgn tglexp <= tanggal sistem."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    lp = _lp()
+    nsb = []
+    for i in range(38):
+        k, _, p, _ = lp[int(_rnd("jt", i) * len(lp))]
+        hari = int(_rnd("jth", i) ** 2 * 420)
+        exp = today - timedelta(days=hari)
+        osm = round(4_000_000 + _rnd("jto", i) * 120_000_000, 2)
+        nsb.append({
+            "nokontrak": f"{k}{p}{180000 + i * 41:07d}", "nama": _M_NAMA[(i * 7) % len(_M_NAMA)],
+            "kdprd": p, "kdloc": k, "colbaru": 1 + min(4, hari // 90),
+            "osmdlc": osm, "osmgnc": round(osm * (0.05 + _rnd("jtm", i) * 0.1), 2),
+            "jw": 12 * (1 + int(_rnd("jtw", i) * 3)), "kdjw": "B",
+            "tglexp": exp.strftime("%d-%m-%Y"), "tgkhari": hari,
+            "_ao": _M_AO[i % len(_M_AO)][0],
+        })
+    if sec == "nasabah":
+        return [{k: v for k, v in x.items() if k != "_ao"} for x in sorted(nsb, key=lambda r: r["nokontrak"])]
+    agg: dict[tuple[str, ...], dict[str, Any]] = {}
+    if sec == "ao":
+        for x in nsb:
+            a = agg.setdefault((x["_ao"],), {"kdaoh": x["_ao"], "nmao": _M_AO_BY_CODE[x["_ao"]],
+                                             "qty": 0, "osmdlc": 0.0, "osmgnc": 0.0})
+            a["qty"] += 1
+            a["osmdlc"] = round(a["osmdlc"] + x["osmdlc"], 2)
+            a["osmgnc"] = round(a["osmgnc"] + x["osmgnc"], 2)
+        return sorted(agg.values(), key=lambda r: r["nmao"])
+    names = {(k, p): (nk, np) for k, nk, p, np in lp}
+    for x in nsb:
+        key = (x["kdloc"], x["kdprd"])
+        nk, np = names[key]
+        a = agg.setdefault(key, {"kdloc": key[0], "nmcabang": nk, "kdprd": key[1], "nmprd": np,
+                                 "qty": 0, "osmdlc": 0.0, "osmgnc": 0.0})
+        a["qty"] += 1
+        a["osmdlc"] = round(a["osmdlc"] + x["osmdlc"], 2)
+        a["osmgnc"] = round(a["osmgnc"] + x["osmgnc"], 2)
+    return [agg[k] for k in sorted(agg)]
+
+
+def _m_target_ao(params: tuple) -> list[dict[str, Any]]:
+    """003 Target AO — target & realisasi tabungan/deposito/pembiayaan per AO,
+    periode YYYYMM. rtab memang 0 di query asli (Cast(0 ...) as rtab)."""
+    per = str(params[0]) if params else "202511"
+    kd = ["01", "02", "03", "01", "04"]
+    out = []
+    for i, (a, n) in enumerate(_M_AO):
+        tab = 20_000_000 * (1 + int(_rnd("tt", a) * 3))
+        dep = 100_000_000 * (1 + int(_rnd("td", a) * 4))
+        loan = 400_000_000 * (1 + int(_rnd("tl", a) * 3))
+        rdep = round(dep * (0.3 + _rnd("rd", a, per) * 0.95), 2)
+        rloan = round(loan * (0.35 + _rnd("rl", a, per) * 0.9), 2)
+        out.append({
+            "kdao": a, "nmao": n, "kdloc": kd[i % len(kd)], "stsrec": "A",
+            "thn": per[:4], "bln": per[4:6],
+            "tab": float(tab), "rtab": 0.0,
+            "dep": float(dep), "rdep": rdep, "bdr_dep": rdep / dep * 100,
+            "loan": float(loan), "rloan": rloan, "bdr_loan": rloan / loan * 100,
+        })
+    return sorted(out, key=lambda r: r["nmao"])
+
+
 def mock_rows(name: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     """name = 'pby_<key>_<seksi>' (tag di SQL)."""
     params = tuple(params)
@@ -297,4 +370,8 @@ def mock_rows(name: str, params: tuple | list = ()) -> list[dict[str, Any]]:
             return _m_dpd(sec)
         if key == "tunggakan":
             return _m_tunggakan(sec)
+        if key == "jatuh_tempo":
+            return _m_jatuh_tempo(sec)
+        if key == "target_ao":
+            return _m_target_ao(params)
     return []

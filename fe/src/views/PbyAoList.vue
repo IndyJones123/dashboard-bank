@@ -9,7 +9,7 @@ export interface AoDetail { label: string; text: (r: Row) => string; bad?: (r: R
 
 const props = defineProps<{
   rows: Row[]
-  /** Nilai utama tiap AO (urutan & bar porsi). */
+  /** Nilai utama tiap AO (urutan; bar = nilai ÷ total semua AO). */
   value: (r: Row) => number
   valueLabel: string
   details: AoDetail[]
@@ -20,19 +20,22 @@ const props = defineProps<{
 }>()
 
 const total = computed(() => props.rows.reduce((t, r) => t + props.value(r), 0))
-const list = computed(() => {
-  const max = Math.max(1, ...props.rows.map((r) => props.value(r)))
-  return [...props.rows]
+const list = computed(() =>
+  [...props.rows]
     .map((r) => ({ r, v: props.value(r) }))
     .sort((a, b) => b.v - a.v)
-    .map(({ r, v }, i) => ({
-      r, v, rank: i + 1,
-      id: String(r.kdaoh ?? ''),
-      name: String(r.nmao || 'Tanpa AO'),
-      bar: (v / max) * 100,
-      share: total.value ? (v / total.value) * 100 : null,
-    }))
-})
+    .map(({ r, v }, i) => {
+      // Bar = porsi AO ini thd total semua AO (sama dgn "% dari total")
+      const share = total.value ? (v / total.value) * 100 : null
+      return {
+        r, v, rank: i + 1,
+        id: String(r.kdaoh ?? ''),
+        name: String(r.nmao || 'Tanpa AO'),
+        bar: Math.min(100, Math.max(0, share ?? 0)),
+        share,
+      }
+    }),
+)
 const initials = (name: string): string =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '–'
 const colorOf = (id: string): string => props.colors.get(id) ?? 'var(--primary)'

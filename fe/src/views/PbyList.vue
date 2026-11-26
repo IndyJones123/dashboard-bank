@@ -23,11 +23,18 @@ const props = withDefaults(
     headKey?: string
     /** Toggle ANGKA PER KARTU (mis. OS pokok / Margin): tiap kartu punya
         pilihan sendiri, default pilihan pertama. Tanpa prop ini -> lama. */
-    headChoices?: { key: string; label: string }[]
+    headChoices?: { key: string; label: string; pct?: ((row: Record<string, unknown>) => number | null) | false }[]
     subtotalBy?: string
     subtotalLabel?: (row: Record<string, unknown>) => string
     total?: boolean
     totalOverride?: (rows: Record<string, unknown>[]) => Record<string, unknown>
+    /** Baris tambahan di bawah jumlah kartu kantor (mode headChoices):
+        label kiri, nilai kanan dihitung dari baris kantor itu. */
+    sumExtras?: {
+      label: string
+      value: (rows: Record<string, unknown>[]) => string
+      bad?: (rows: Record<string, unknown>[]) => boolean
+    }[]
     perPage?: number
     empty?: string
   }>(),
@@ -71,6 +78,7 @@ const hcol = (c: Card): PbyCol | undefined => {
   return props.cols.find((x) => x.key === k) ?? head.value
 }
 const hkey = (c: Card): string => hcol(c)?.key ?? ''
+const colOf = (key: string): PbyCol | undefined => props.cols.find((x) => x.key === key)
 /** Angka (bulat) baris pada kartu c. */
 const hnum = (c: Card, d: Record<string, unknown>): number =>
   Math.round(Number(d[hkey(c)]) || 0)
@@ -150,6 +158,34 @@ const cards = computed<Card[]>(() => {
   return out
 })
 
+/* ---------- Halaman kartu kantor: maks 8 (2 baris x 4), geser kiri/kanan ---------- */
+const CARDS_PER_PAGE = 8
+const cardPages = computed<Card[][]>(() => {
+  const out: Card[][] = []
+  for (let i = 0; i < cards.value.length; i += CARDS_PER_PAGE) out.push(cards.value.slice(i, i + CARDS_PER_PAGE))
+  return out
+})
+const cpage = ref(0)
+watch(() => cardPages.value.length, (n) => { if (cpage.value > n - 1) cpage.value = Math.max(0, n - 1) })
+const cardRange = computed(() => {
+  const n = cards.value.length
+  const a = cpage.value * CARDS_PER_PAGE + 1
+  return `${a}–${Math.min(a + CARDS_PER_PAGE - 1, n)} dari ${n} kantor`
+})
+/* Usap (sentuh/pena) kiri/kanan utk ganti halaman; mouse pakai tombol */
+let swipeX: number | null = null
+function swipeStart(e: PointerEvent): void {
+  swipeX = e.pointerType === 'mouse' ? null : e.clientX
+}
+function swipeEnd(e: PointerEvent): void {
+  if (swipeX == null) return
+  const dx = e.clientX - swipeX
+  swipeX = null
+  if (Math.abs(dx) < 50) return
+  if (dx < 0 && cpage.value < cardPages.value.length - 1) cpage.value++
+  else if (dx > 0 && cpage.value > 0) cpage.value--
+}
+
 /* Mode tanpa kantor: setiap baris jadi kartu kecil sendiri (flat). */
 const flatRows = computed(() => (props.subtotalBy ? [] : visible.value))
 /* Donat porsi tiap produk dalam kantor (angka utama, dari query). Irisan
@@ -182,6 +218,16 @@ function shareOf(c: Card, i: number): string {
   if (!total) return '–'
   const v = Math.max(0, Number(c.rows[i][k]) || 0)
   return `${((v / total) * 100).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+}
+/** Persen di samping angka produk: pilihan toggle dgn `pct` fungsi (mis.
+    NPF -> NPF % produk itu); `pct: false` -> tanpa persen (''); tanpa `pct`
+    -> porsi komposisi dalam kantor. */
+function pctOf(c: Card, i: number): string {
+  const choice = props.headChoices?.find((h) => h.key === hkey(c))
+  if (choice?.pct === false) return ''
+  if (!choice?.pct) return shareOf(c, i)
+  const v = choice.pct(c.rows[i])
+  return v == null ? '–' : `${v.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
 const donuts = computed(() => new Map(cards.value.map((c) => [c.key, donutOf(c)])))
 
@@ -218,11 +264,21 @@ const prodSub = (d: Record<string, unknown>): string => {
 
 <template>
   <div class="pl-wrap">
-    <div v-if="cards.length || flatRows.length" class="pl-grid">
-      <!-- Mode per kantor: satu kartu per kantor, produk 1 baris per produk -->
-      <article v-for="c in cards" :key="c.key" class="pl-card">
+    <div v-if="cards.length || flatRows.length" class="pl-stack">
+      <!-- Mode per kantor: maks CARDS_PER_PAGE kartu per halaman; halaman
+           berjejer dalam track yg digeser kiri/kanan (tombol / usap) -->
+      <div
+        v-if="cards.length" class="pl-view"
+        @pointerdown="swipeStart" @pointerup="swipeEnd"
+      >
+        <div class="pl-track" :style="{ transform: `translateX(-${cpage * 100}%)` }">
+          <div
+            v-for="(pg, pi) in cardPages" :key="pi" class="pl-grid by-kantor pl-page"
+            :inert="pi !== cpage || undefined" :aria-hidden="pi !== cpage || undefined"
+          >
+      <article v-for="c in pg" :key="c.key" class="pl-card">
         <header class="pl-card-head">
-          <div class="pl-card-title">
+          <div class="pl-card-title" :class="{ 'has-toggle': headChoices?.length }">
             <svg v-if="donuts.get(c.key)?.slices.length" class="pl-donut" viewBox="0 0 42 42" role="img" :aria-label="`Porsi produk ${c.title}`">
               <!-- Donat 3D: satu cincin digambar ulang sbg lapisan tebal (lebih gelap)
                    lalu cincin atas; keduanya dimiringkan (ellipse) -->
@@ -244,25 +300,42 @@ const prodSub = (d: Record<string, unknown>): string => {
               <use :href="`#dn-${uid}-${c.key}`" transform="translate(21 19.4) scale(1 0.62) translate(-21 -21)" />
             </svg>
             <div class="pl-card-name">
-              {{ c.title }}
-              <small v-if="c.sub" class="pl-sub">{{ c.sub }}</small>
-              <span v-if="hcol(c)" class="pl-card-sum num">
+              <div class="pl-name-row">
+                <span class="pl-name" :title="c.title">{{ c.title }}<small v-if="c.sub" class="pl-sub">{{ c.sub }}</small></span>
+                <!-- Toggle angka baris produk (headChoices), di samping nama kantor -->
+                <div
+                  v-if="headChoices?.length" class="segmented pl-toggle"
+                  role="group" :aria-label="`Angka produk ${c.title}`"
+                >
+                  <button
+                    v-for="hc in headChoices" :key="hc.key" type="button"
+                    :class="{ on: hkey(c) === hc.key }" :aria-pressed="hkey(c) === hc.key"
+                    @click="headSel[c.key] = hc.key"
+                  >{{ hc.label }}</button>
+                </div>
+              </div>
+              <!-- Dengan toggle: semua jumlah tampil tetap (tidak ikut toggle) -->
+              <dl v-if="headChoices?.length" class="pl-sums">
+                <div v-for="hc in headChoices" :key="hc.key">
+                  <dt>Jumlah {{ hc.label }}</dt>
+                  <dd class="num">
+                    <RpValue v-if="isRp(colOf(hc.key))" :value="Math.round(Number(c.sum[hc.key]) || 0)" />
+                    <template v-else>{{ fmt(c.sum[hc.key], colOf(hc.key)?.fmt) }}</template>
+                  </dd>
+                </div>
+                <!-- Baris tambahan per kantor (mis. Kol 3 + 4 + 5 / Outstanding = NPF %) -->
+                <div v-for="ex in sumExtras" :key="ex.label">
+                  <dt>{{ ex.label }}</dt>
+                  <dd class="num" :class="{ bad: ex.bad?.(c.rows) }">{{ ex.value(c.rows) }}</dd>
+                </div>
+              </dl>
+              <span v-else-if="hcol(c)" class="pl-card-sum num">
                 <RpValue v-if="isRp(hcol(c))" :value="hnum(c, c.sum)" />
                 <template v-else>{{ htext(c, c.sum) }}</template>
               </span>
             </div>
           </div>
         </header>
-        <!-- Toggle angka kartu (headChoices): pilih OS pokok / Margin -->
-        <div
-          v-if="headChoices?.length" class="segmented pl-toggle"
-          role="group" aria-label="Angka yang ditampilkan"
-        >
-          <button
-            v-for="hc in headChoices" :key="hc.key" type="button"
-            :class="{ on: hkey(c) === hc.key }" @click="headSel[c.key] = hc.key"
-          >{{ hc.label }}</button>
-        </div>
         <ul class="pl-lines">
           <li v-for="(r, i) in c.rows" :key="i" class="pl-line">
             <details v-if="detailCols.length" class="pl-item">
@@ -274,7 +347,7 @@ const prodSub = (d: Record<string, unknown>): string => {
                 </span>
                 <span class="pl-val num">
                   <span v-if="hcol(c)"><RpValue v-if="isRp(hcol(c))" :value="hnum(c, r)" bare /><template v-else>{{ htext(c, r) }}</template></span>
-                  <small class="pl-pct">{{ shareOf(c, i) }}</small>
+                  <small v-if="pctOf(c, i)" class="pl-pct">{{ pctOf(c, i) }}</small>
                   <svg class="pl-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
                 </span>
               </summary>
@@ -299,13 +372,25 @@ const prodSub = (d: Record<string, unknown>): string => {
               <span class="pl-prod">{{ lineMeta(r) || lineTitle(r) }}</span>
               <span class="pl-val num">
                 <span v-if="hcol(c)"><RpValue v-if="isRp(hcol(c))" :value="hnum(c, r)" bare /><template v-else>{{ htext(c, r) }}</template></span>
-                <small class="pl-pct">{{ shareOf(c, i) }}</small>
+                <small v-if="pctOf(c, i)" class="pl-pct">{{ pctOf(c, i) }}</small>
               </span>
             </div>
           </li>
         </ul>
       </article>
+          </div>
+        </div>
+      </div>
+      <div v-if="cardPages.length > 1" class="pby-pager pl-cpager">
+        <button type="button" :disabled="cpage <= 0" aria-label="Kantor sebelumnya" @click="cpage--">‹</button>
+        <span class="pl-dots" aria-hidden="true">
+          <i v-for="(_, pi) in cardPages" :key="pi" :class="{ on: pi === cpage }" @click="cpage = pi" />
+        </span>
+        <span class="num">{{ cardRange }}</span>
+        <button type="button" :disabled="cpage >= cardPages.length - 1" aria-label="Kantor berikutnya" @click="cpage++">›</button>
+      </div>
 
+      <div v-if="flatRows.length || totalRow" class="pl-grid">
       <!-- Mode tanpa kantor (AO / nasabah): kartu kecil berjejer, 1 baris ringkas -->
       <article v-for="(r, i) in flatRows" :key="`f${i}`" class="pl-card flat">
         <details v-if="detailCols.length" class="pl-item">
@@ -374,6 +459,7 @@ const prodSub = (d: Record<string, unknown>): string => {
           <span v-if="head" class="pl-val num"><RpValue v-if="isRp(head)" :value="Math.round(Number(totalRow[head.key]) || 0)" /><template v-else>{{ fmt(totalRow[head.key], head.fmt) }}</template></span>
         </div>
       </article>
+      </div>
     </div>
     <p v-else class="muted">{{ empty }}</p>
 
@@ -393,6 +479,21 @@ const prodSub = (d: Record<string, unknown>): string => {
   gap: 0.55rem;
   align-items: start;
 }
+/* Kartu per kantor: 4 kartu per baris supaya lebih lebar; menyusut di layar sempit */
+.pl-grid.by-kantor { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1280px) { .pl-grid.by-kantor { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 980px) { .pl-grid.by-kantor { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .pl-grid.by-kantor { grid-template-columns: minmax(0, 1fr); } }
+/* Halaman kartu kantor: track horizontal, 1 halaman = lebar penuh */
+.pl-stack { display: flex; flex-direction: column; gap: 0.55rem; }
+.pl-view { overflow: hidden; touch-action: pan-y; }
+.pl-track { display: flex; align-items: flex-start; transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.pl-page { flex: 0 0 100%; min-width: 0; }
+.pl-cpager { justify-content: center; margin-top: 0; }
+.pl-dots { display: inline-flex; gap: 0.35rem; }
+.pl-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); cursor: pointer; }
+.pl-dots i.on { background: var(--primary); }
+@media (prefers-reduced-motion: reduce) { .pl-track { transition: none; } }
 .pl-card {
   min-width: 0;
   border: 1px solid var(--border-strong);
@@ -401,9 +502,27 @@ const prodSub = (d: Record<string, unknown>): string => {
   padding: 0.45rem 0.55rem;
 }
 .pl-card.total { grid-column: 1 / -1; background: var(--surface-2); border-color: var(--ink-16); }
-/* Toggle angka per kartu (headChoices): lebar penuh, chip kecil */
-.pl-toggle { display: flex; width: 100%; margin-top: 0.35rem; padding: 2px; }
-.pl-toggle button { flex: 1; min-height: 24px; padding: 0.1rem 0.25rem; font-size: 0.72rem; }
+/* Nama kantor + kode di satu baris, toggle angka (headChoices) di kanannya */
+.pl-name-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; min-width: 0; }
+.pl-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-toggle { display: inline-flex; flex: none; padding: 2px; }
+.pl-toggle button { min-height: 22px; padding: 0.05rem 0.35rem; font-size: 0.68rem; }
+/* Dengan toggle: baris 1 = nama + kode | toggle (lebar penuh kartu),
+   baris 2 = donat | jumlah tetap. Kartu 4 per baris tetap muat. */
+.pl-card-title.has-toggle {
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 0.25rem 0.5rem; width: 100%;
+}
+.pl-card-title.has-toggle .pl-card-name { display: contents; }
+.pl-card-title.has-toggle .pl-name-row { grid-column: 1 / -1; grid-row: 1; }
+.pl-card-title.has-toggle .pl-donut { grid-column: 1; grid-row: 2; width: 38px; height: 34px; }
+.pl-card-title.has-toggle .pl-sums { grid-column: 2; grid-row: 2; margin: 0; }
+/* Jumlah tetap per kantor (mis. Outstanding & NPF), tidak ikut toggle */
+.pl-sums { margin: 0.2rem 0 0; display: flex; flex-direction: column; gap: 0.05rem; }
+.pl-sums > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 0.4rem; }
+.pl-sums dt { font-size: 0.7rem; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.pl-sums dd { margin: 0 0 0 auto; font-size: 0.78rem; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.pl-sums dd.bad { color: var(--red-dark); }
 .pl-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; min-width: 0; }
 .pl-card-name { font-weight: 600; color: var(--ink); font-size: var(--fs-sm); overflow-wrap: anywhere; min-width: 0; }
 .pl-card-sum { font-weight: 700; color: var(--ink); white-space: nowrap; font-size: var(--fs-sm); }
@@ -412,7 +531,8 @@ const prodSub = (d: Record<string, unknown>): string => {
 
 /* Donat porsi produk: kepala kartu (kiri), kecil */
 .pl-card-title { display: flex; align-items: center; gap: 0.45rem; min-width: 0; }
-.pl-card-title .pl-card-name { display: flex; flex-direction: column; gap: 0; }
+.pl-card-title { flex: 1 1 auto; }
+.pl-card-title .pl-card-name { display: flex; flex-direction: column; gap: 0; flex: 1 1 auto; }
 .pl-card-title .pl-card-sum { font-size: 0.8125rem; color: var(--muted-2); font-weight: 600; }
 .pl-donut { flex: none; width: 46px; height: 40px; overflow: visible; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.12)); }
 .pl-depth { filter: brightness(0.55); }

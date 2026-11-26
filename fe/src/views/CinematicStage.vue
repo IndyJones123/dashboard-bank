@@ -123,6 +123,53 @@ async function waitPage(t: number): Promise<Element | null> {
   }
 }
 
+/** Sesudah ganti tab: pilih tampilan "Kantor & Produk", tunggu data selesai
+    dimuat, buka tabel terperinci. */
+async function settleTab(main: Element, t: number): Promise<void> {
+  const t0 = performance.now()
+  let prepared = false
+  for (;;) {
+    if (t !== token) return
+    await sleep(prepared ? 150 : 350)
+    if (!prepared) {
+      prepared = true
+      main
+        .querySelectorAll<HTMLButtonElement>('.segmented button:not(.on)')
+        .forEach((b) => {
+          if (/kantor\s*&\s*produk/i.test(txt(b))) b.click()
+        })
+      continue
+    }
+    const busy = /Memuat/.test(main.textContent ?? '')
+    if (!busy || performance.now() - t0 > 10000) break
+  }
+  const closed = [...main.querySelectorAll<HTMLButtonElement>('.details-btn[aria-expanded="false"]')]
+  if (closed.length) {
+    closed.forEach((b) => b.click())
+    await sleep(700)
+  }
+  await sleep(250)
+}
+
+/** Panel semua tab halaman (tablist di luar panel, mis. List Saldo:
+    Outstanding | Realisasi | Kolektibilitas). Tiap tab dibuka bergiliran,
+    panelnya disalin, lalu tab semula dipulihkan. */
+async function readAllPanels(main: Element, t: number): Promise<PanelScene[]> {
+  const tabs = [...main.querySelectorAll<HTMLButtonElement>('[role="tablist"] [role="tab"]')].filter(outsidePanel)
+  if (tabs.length < 2) return readPanels(main)
+  const orig = tabs.find((b) => b.getAttribute('aria-selected') === 'true') ?? tabs[0]
+  const out: PanelScene[] = []
+  for (const tab of tabs) {
+    if (t !== token) return out
+    if (tab.getAttribute('aria-selected') !== 'true') tab.click()
+    await settleTab(main, t)
+    if (t !== token) return out
+    out.push(...readPanels(main))
+  }
+  if (orig.getAttribute('aria-selected') !== 'true') orig.click()
+  return out
+}
+
 function readIntro(main: Element): IntroScene {
   const heroEl = [...main.querySelectorAll('.lead-value')].find(outsidePanel)
   let hero: Hero | null = null
@@ -313,7 +360,10 @@ async function playPage(): Promise<void> {
   phase.value = 'wait'
   const main = await waitPage(t)
   if (t !== token || !main) return
-  scenes.value = [readIntro(main), ...readPanels(main)]
+  const intro = readIntro(main)
+  const panels = await readAllPanels(main, t)
+  if (t !== token) return
+  scenes.value = [intro, ...panels]
   phase.value = 'show'
   for (let i = 0; i < scenes.value.length; i++) {
     if (t !== token) return
@@ -746,6 +796,9 @@ const counter = computed(
 .cp-card :deep(.cine-clone .pby-head > div:first-child) { display: none; }
 .cp-card :deep(.cine-clone .pby-head) { margin-bottom: 0.5rem; }
 .cp-card :deep(.cine-clone .table-scroll) { overflow: visible; }
+/* Kartu kantor berhalaman (PbyList): di panggung semua halaman tampil bertumpuk */
+.cp-card :deep(.cine-clone .pl-view) { overflow: visible; }
+.cp-card :deep(.cine-clone .pl-track) { transform: none !important; transition: none; flex-direction: column; gap: 0.55rem; }
 
 @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } }
 @keyframes fade-in { from { opacity: 0; } }

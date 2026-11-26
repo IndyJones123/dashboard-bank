@@ -514,6 +514,60 @@ def pembiayaan_os_berjalan(
     return {"kdloc": kdloc, **data}
 
 
+@app.get("/api/pembiayaan/target-ao")
+def pembiayaan_target_ao(
+    periode: str = Query(..., pattern=_PERIODE),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Target vs realisasi per AO (003 Pembiayaan Target AO.sql), periode YYYYMM:
+    tabungan (rtab selalu 0 di query), deposito (TOFDEP dibuka di periode),
+    pembiayaan (dropping di periode); bdr_* = realisasi / target x 100."""
+    _viewer(creds, "pembiayaan-saldo")
+    data = _pby_run("target_ao", {"@periode": periode})
+    return {"periode": periode, "rows": data.get("data", [])}
+
+
+@app.get("/api/pembiayaan/target-ao-tahun")
+def pembiayaan_target_ao_tahun(
+    tahun: str = Query(..., pattern=r"^\d{4}$"),
+    sampai: int = Query(12, ge=1, le=12),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Target vs realisasi per AO bulan 1..`sampai` pada `tahun` (query 003
+    dijalankan per bulan, paralel). Per AO: loan/rloan/dep/rdep = list 12
+    nilai (index 0 = Januari; bulan > sampai = 0)."""
+    _viewer(creds, "pembiayaan-saldo")
+    sql, order = QP.sections("target_ao")["data"]
+
+    def month(m: int) -> list[dict]:
+        params = QP.build_params(order, {"@periode": f"{tahun}{m:02d}"})
+        return QP.clean_rows(db.run_query(sql, params))
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        per_month = list(ex.map(month, range(1, sampai + 1)))
+
+    keys = ("loan", "rloan", "dep", "rdep")
+    by: dict[str, dict] = {}
+    for m, rows in enumerate(per_month):
+        for r in rows:
+            k = str(r.get("kdao"))
+            cur = by.setdefault(k, {"kdao": r.get("kdao"), "nmao": r.get("nmao"), "kdloc": r.get("kdloc"),
+                                    **{c: [0.0] * 12 for c in keys}})
+            for c in keys:
+                cur[c][m] += float(r.get(c) or 0)
+    ao = sorted(by.values(), key=lambda r: str(r.get("nmao") or ""))
+    return {"tahun": tahun, "sampai": sampai, "ao": ao}
+
+
+@app.get("/api/pembiayaan/jatuh-tempo")
+def pembiayaan_jatuh_tempo(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """Pembiayaan jatuh tempo (Pembiayaan JatuhTempo.sql): kontrak aktif
+    (stsrec A/N) dgn tglexp <= tanggal sistem, per lokasi & produk, per AO,
+    dan daftar nasabah (tgkhari = hari lewat jatuh tempo)."""
+    _viewer(creds, "pembiayaan-saldo")
+    return _pby_run("jatuh_tempo")
+
+
 @app.get("/api/pembiayaan/dpd")
 def pembiayaan_dpd(creds: HTTPAuthorizationCredentials | None = Depends(bearer)):
     """Day Past Due (DPD Revisi) per AO dan per lokasi & produk, posisi tanggal sistem."""

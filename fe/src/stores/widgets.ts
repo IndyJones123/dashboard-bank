@@ -125,6 +125,8 @@ export const WIDGET_PAGES: PageDef[] = [
       { id: 'os-bulanan', label: 'Outstanding', kind: 'grafik', span: 12 },
       { id: 'kolektibilitas', label: 'Kolektibilitas & NPF', kind: 'tabel', span: 12 },
       { id: 'realisasi', label: 'Realisasi pembiayaan', kind: 'tabel', span: 12 },
+      { id: 'jatuh-tempo', label: 'Pembiayaan jatuh tempo', kind: 'tabel', span: 12 },
+      { id: 'target-ao', label: 'Target AO', kind: 'tabel', span: 12 },
     ],
   },
   {
